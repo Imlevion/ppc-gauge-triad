@@ -1,5 +1,5 @@
 /*
- * Minimal zero-heap C99 streaming demo for PPC-Gauge-Triad v0.7.0.
+ * Minimal zero-heap C99 streaming demo for PPC-Gauge-Triad v0.7.1.
  *
  * Build & run on Linux after `cargo build --release`:
  *   gcc -Wall -Wextra -Werror -std=c99 -O2 -Iinclude examples/c_stream_demo.c \

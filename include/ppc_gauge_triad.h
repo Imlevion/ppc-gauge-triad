@@ -1,7 +1,7 @@
 /*
- * PPC-Gauge-Triad v0.7.0 — Official C99 / C++ ABI Header
+ * PPC-Gauge-Triad v0.7.1 — Official C99 / C++ ABI Header
  *
- * Matches `ppc_gauge_triad_rs` v0.7.0 (`#![no_std]`, f32, 0 B heap, 0 matrix inversions).
+ * Matches `ppc_gauge_triad_rs` v0.7.1 (`#![no_std]`, f32, 0 B heap, 0 matrix inversions).
  * Embedded static SRAM footprint:
  *   - GaugeTriadEngineF32 : 11,624 B (64-bit) / 11,604 B (ARM Cortex-M4F)
  *   - AutoCalBufF32       :  3,140 B (all targets)
@@ -22,7 +22,7 @@ extern "C" {
 
 #define PPC_TRIAD_VERSION_MAJOR 0
 #define PPC_TRIAD_VERSION_MINOR 7
-#define PPC_TRIAD_VERSION_PATCH 0
+#define PPC_TRIAD_VERSION_PATCH 1
 
 #define PPC_TRIAD_MAX_W   8u
 #define PPC_TRIAD_MAX_D   4u

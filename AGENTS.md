@@ -1,7 +1,7 @@
-# AGENTS.md — PPC-Gauge-Triad v0.7.0 Engineering Context (Google Antigravity App)
+# AGENTS.md — PPC-Gauge-Triad v0.7.1 Engineering Context (Google Antigravity App)
 
 ## Project Identity
-- **Crate:** `ppc_gauge_triad_rs` v0.7.0 (`#![no_std]` `f32` Rust, `0 B` heap, `0` matrix inversions; live on GitHub [`Imlevion/ppc-gauge-triad`](https://github.com/Imlevion/ppc-gauge-triad), [`crates.io`](https://crates.io/crates/ppc_gauge_triad_rs), and [`docs.rs`](https://docs.rs/ppc_gauge_triad_rs)).
+- **Crate:** `ppc_gauge_triad_rs` v0.7.1 (`#![no_std]` `f32` Rust, `0 B` heap, `0` matrix inversions; live on GitHub [`Imlevion/ppc-gauge-triad`](https://github.com/Imlevion/ppc-gauge-triad), [`crates.io`](https://crates.io/crates/ppc_gauge_triad_rs), and [`docs.rs`](https://docs.rs/ppc_gauge_triad_rs)).
 - **Engine Static Struct SRAM (compile-time verified `< 16 KB`):**
   - Core `GaugeTriadEngineF32`: `11,604 B` (`11.33 KB`) on `thumbv7em-none-eabihf` / `11,624 B` (`11.35 KB`) on 64-bit hosts.
   - Combined `AutoCalEngineF32` (core + `AutoCalBufF32`): `14,744 B` (`14.40 KB`) on `thumbv7em-none-eabihf` / `14,768 B` (`14.42 KB`) on 64-bit hosts.
@@ -18,13 +18,12 @@
 4. **No Unverified Hardware Claims:** Level 3 claims (DWT cycle count, µs on real MCU, mW power, full firmware `.elf`/`.map` Flash & RAM) must come strictly from real hardware probe output (`probe-rs` / `defmt` / `arm-none-eabi-size` / oscilloscope / power profiler).
 5. **Separate CI Scope from Offline Research Replay:** Always distinguish what runs automatically on GitHub Actions CI (Level 1 Rust invariants, `AutoCalBufF32` unit tests, Rustdoc/doctests, C99 ABI demo, Python `L1.8` parity/cache tests, `cargo package`, 5-target cross-compilation) from full SMD/PSM/OpenML research benchmarks reproduced locally from offline caches (`benchmarks/run_benchmarks.py --all --offline`).
 
-## Completed Milestones (v0.7.0)
+## Completed Milestones (v0.7.0 – v0.7.1)
 - [x] **Local Automated Benchmark Harness:** Ported Colab benchmarks into `tests/level1_invariants.rs`, `tests/autocal_v07.rs`, `benches/triad_bench.rs` (Criterion), and local Python scripts with offline SMD/PSM `.npz` caching (`benchmarks/`).
-- [x] **Public GitHub Repo, CI/CD & `crates.io` Release:** Published `Imlevion/ppc-gauge-triad` (`v0.7.0`), green CI across 5 cross-compilation targets, `crates.io` + `docs.rs`, `CITATION.cff`, and `v0.7.0` GitHub Release.
+- [x] **Public GitHub Repo, CI/CD & `crates.io` Releases:** Published `Imlevion/ppc-gauge-triad` (`v0.7.0` & `v0.7.1`), green CI across 5 cross-compilation targets + Level 2.5 ELF/QEMU job, `crates.io` + `docs.rs`, and `CITATION.cff`.
 - [x] **On-Chip Zero-Touch Auto-Warmup (`v0.7.0`) & C99 Ecosystem:** Added `#![no_std]` `AutoCalBufF32` / `AutoCalEngineF32` (`Warmup -> Calibrate -> Monitor`), `include/ppc_gauge_triad.h`, verified `examples/c_stream_demo.c`, `examples/level3_cortex_m4f_eval_template.rs`, 300-DPI figure generator, and arXiv/IEEE LaTeX preprint draft (`paper/ppc_gauge_triad.tex`).
-- [x] **Level 2.5 Turnkey Cortex-M4F `.elf` & QEMU Verification (`firmware/cortex-m4f-eval/`):** Linked real bare-metal `thumbv7em-none-eabihf` `.elf` (`cortex-m-rt` + `panic-halt` + `ppc_gauge_triad_rs` `default-features = false`), fixed `zeroed()` all-zero `.bss` placement (`.data = 0 B`, `Total Flash = 23,624 B / 23.07 KB`, `Static RAM .bss = 14,784 B / 14.44 KB`), and wired automated QEMU `mps2-an386` functional execution into CI (strictly separated from Level 3 physical silicon).
+- [x] **Level 2.5 Turnkey Cortex-M4F `.elf`, QEMU Verification & `v0.7.1` Embedded Hygiene (`firmware/cortex-m4f-eval/`):** Gated `#[panic_handler]` behind opt-in `panic-handler` feature, fixed `zeroed()` true all-zero `.bss` placement (`.data = 0 B`, `Total Flash = 23,624 B / 23.07 KB`, `Static RAM .bss = 14,784 B / 14.44 KB`), and wired automated QEMU `mps2-an386` functional execution into CI (strictly separated from Level 3 physical silicon).
 
 ## Next Roadmap Milestones
-1. **`v0.7.1` Patch Release (Embedded `#![no_std]` Hygiene + True `.bss` Flash Fix):** Ship opt-in `panic-handler` feature and true all-zero `zeroed()` (`-14.40 KB` Flash ROM) to `crates.io`.
-2. **Level 3 Physical Silicon Verification (`Imlevion/ppc-gauge-triad#3`):** Flash onto STM32F4/STM32H7, nRF52840, or ESP32-S3 hardware; measure real DWT cycle counts, full firmware `.elf`/`.map` Flash & RAM (incl. stack/interrupts via `arm-none-eabi-size`/`cargo-bloat`), mW power, and real IMU/thermal sensor streams via `probe-rs`.
-3. **Optional Ecosystem Extensions:** Native Python (`PyO3`/`maturin`) wheels and formal arXiv/Zenodo preprint publication once ready.
+1. **Level 3 Physical Silicon Verification (`Imlevion/ppc-gauge-triad#3`):** Flash `firmware/cortex-m4f-eval/` onto STM32F4/STM32H7, nRF52840, or ESP32-S3 hardware; measure real DWT cycle counts, full firmware `.elf`/`.map` Flash & RAM (incl. stack/interrupts via `arm-none-eabi-size`/`cargo-bloat`), mW power, and real IMU/thermal sensor streams via `probe-rs`.
+2. **Optional Ecosystem Extensions:** Native Python (`PyO3`/`maturin`) wheels and formal arXiv/Zenodo preprint publication once ready.

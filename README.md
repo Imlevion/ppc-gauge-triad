@@ -1,4 +1,4 @@
-# PPC-Gauge-Triad v0.7.0 (`ppc_gauge_triad_rs`)
+# PPC-Gauge-Triad v0.7.1 (`ppc_gauge_triad_rs`)
 
 [![CI](https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml/badge.svg)](https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/ppc_gauge_triad_rs.svg)](https://crates.io/crates/ppc_gauge_triad_rs)
@@ -32,7 +32,7 @@ See [`VALIDATION_REPORT_v061.md`](VALIDATION_REPORT_v061.md) for the complete ev
 
 ### `#![no_std]` Embedded Integration & Memory Scope
 
-- **Library vs. Final Firmware (`#[panic_handler]`):** Adding `ppc_gauge_triad_rs = { version = "0.7", default-features = false }` compiles a pure `#![no_std]` Rust library (`rlib`) **without** defining a `#[panic_handler]`. Your final bare-metal firmware binary **must** provide its own `#[panic_handler]` (e.g., `panic-halt`, `panic-probe`, or `panic-rtt-target`) and runtime startup/FPU initialization — avoiding duplicate `panic_impl` linker conflicts. Enable the opt-in `panic-handler` Cargo feature *only* when building a standalone `#![no_std]` `cdylib` outside a Rust firmware binary.
+- **Library vs. Final Firmware (`#[panic_handler]`):** Adding `ppc_gauge_triad_rs = { version = "0.7.1", default-features = false }` compiles a pure `#![no_std]` Rust library (`rlib`) **without** defining a `#[panic_handler]`. Your final bare-metal firmware binary **must** provide its own `#[panic_handler]` (e.g., `panic-halt`, `panic-probe`, or `panic-rtt-target`) and runtime startup/FPU initialization — avoiding duplicate `panic_impl` linker conflicts. Enable the opt-in `panic-handler` Cargo feature *only* when building a standalone `#![no_std]` `cdylib` outside a Rust firmware binary.
 - **Engine Struct SRAM (`< 16 KB`) vs. Total Firmware RAM:** The compile-time assertions verify **only the engine's static `.bss` struct size** (`11,604 B` core / `14,744 B` `AutoCalEngineF32` on ARM Cortex-M4F, `0 B` heap). This does **not** guarantee that a complete user firmware fits within `16 KB` RAM — final firmware RAM sizing must also budget call stack (including a `1,024 B` stack scratch array during `finalize_calibration()`), interrupt/ISR frames, DMA/ADC/sensor ring buffers, logging buffers, and BSP/RTOS runtime overhead measured on the final `.elf`/`.map`.
 
 ---
@@ -112,7 +112,7 @@ python benchmarks/run_benchmarks.py --all --offline
 ├── Cargo.toml                         # crates.io-ready manifest (MIT OR Apache-2.0, #![no_std])
 ├── CITATION.cff                       # CFF 1.2.0 citation metadata (GitHub "Cite this repository")
 ├── LICENSE-MIT / LICENSE-APACHE       # Dual open-source licenses
-├── CHANGELOG.md                       # Versioned release notes (v0.6.1 -> v0.7.0)
+├── CHANGELOG.md                       # Versioned release notes (v0.6.1 -> v0.7.1)
 ├── src/lib.rs                         # Core GaugeTriadEngineF32, v0.7 AutoCalBufF32/AutoCalEngineF32 & C FFI
 ├── include/ppc_gauge_triad.h          # Official C99 / C++ ABI header matching Rust #[repr(C)]
 ├── examples/

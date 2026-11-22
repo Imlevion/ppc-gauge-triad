@@ -5,7 +5,7 @@ All notable changes to `ppc_gauge_triad_rs` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.1] - 2026-11-22
 
 ### Added
 - **Level 2.5 Turnkey ARM Cortex-M4F Firmware (`firmware/cortex-m4f-eval/`) & ELF Inspector (`benchmarks/inspect_elf.py`):**
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `thumbv7em-none-eabihf`.
 
 ### Documentation & CI
-- Synced `AGENTS.md` to v0.7.0 identity, completed milestones, and embedded memory accounting rules.
+- Synced `AGENTS.md` to v0.7.1 identity, completed milestones, and embedded memory accounting rules.
 - Separated automated GitHub CI verification scope from locally reproduced offline SMD/PSM
   research benchmarks in `README.md`.
 - Explicitly distinguished compile-time engine static struct SRAM (`< 16 KB`) from total final

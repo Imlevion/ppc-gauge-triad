@@ -2,7 +2,7 @@ cff-version: 1.2.0
 type: software
 message: "If you use PPC-Gauge-Triad or its reproducible benchmark artifacts, please cite this repository using the metadata below."
 title: "PPC-Gauge-Triad: Deterministic #![no_std] f32 Zero-Heap Streaming Anomaly Detection Engine"
-version: "0.7.0"
+version: "0.7.1"
 date-released: "2026-11-22"
 authors:
   - name: "Imlevion"
@@ -10,7 +10,7 @@ authors:
     website: "https://github.com/Imlevion"
 repository-code: "https://github.com/Imlevion/ppc-gauge-triad"
 url: "https://github.com/Imlevion/ppc-gauge-triad"
-abstract: "Deterministic #![no_std] f32 zero-heap 3-channel streaming anomaly detection engine (<15 KB static SRAM on ARM Cortex-M4F, 0 matrix inversions) featuring Sim+(d) Givens-QR canonicalization, Huber-clamped EMA / stable-plateau DC re-lock, dual-stage alarm gating, and on-chip zero-touch AutoCalBufF32 auto-warmup. Verified at Level 1 (algorithmic invariants) and Level 2 (offline SMD/PSM/OpenML replay and 5-target cross-compilation); Level 3 physical MCU silicon verification remains pending external hardware measurement."
+abstract: "Deterministic #![no_std] f32 zero-heap 3-channel streaming anomaly detection engine (<15 KB static struct SRAM on ARM Cortex-M4F, 0 matrix inversions) featuring Sim+(d) Givens-QR canonicalization, Huber-clamped EMA / stable-plateau DC re-lock, dual-stage alarm gating, and on-chip zero-touch AutoCalBufF32 auto-warmup. Verified at Level 1 (algorithmic invariants), Level 2 (offline SMD/PSM/OpenML replay and 5-target cross-compilation), and Level 2.5 (linked ARM Cortex-M4F .elf 23.07 KB Flash / 0 B .data / 14.44 KB .bss + QEMU mps2-an386 execution); Level 3 physical MCU silicon verification remains pending external hardware measurement."
 keywords:
   - "rust"
   - "no-std"
