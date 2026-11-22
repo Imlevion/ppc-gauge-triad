@@ -1,0 +1,31 @@
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# Cached SMD/PSM datasets (downloaded locally by benchmarks/dataset_cache.py)
+/data_cache/
+
+# Python caches & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Compiled shared libraries if copied outside target/
+*.dll
+*.so
+*.dylib
+
+# Local secrets / MCP credentials (keep .agents/mcp_config.example.json tracked)
+.agents/mcp_config.json
+.env
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

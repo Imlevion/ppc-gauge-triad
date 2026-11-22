@@ -1,0 +1,5 @@
+# Minimal dependencies for local Python benchmarks & L1.8 parity (no pandas required)
+numpy>=1.24
+scikit-learn>=1.3
+# Optional test runner (standard library `unittest` also works out of the box):
+# pytest>=8.0
