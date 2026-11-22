@@ -26,6 +26,10 @@ venv/
 # Local release & marketing launch kit (private working notes)
 LAUNCH_KIT.md
 
+# Local compiled preprint upload bundles
+paper/*.tar.gz
+paper/*.zip
+
 # OS & editor files
 .DS_Store
 Thumbs.db

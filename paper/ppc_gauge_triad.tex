@@ -1,3 +1,4 @@
+\pdfoutput=1
 \documentclass[conference]{IEEEtran}
 
 \usepackage[utf8]{inputenc}
@@ -35,7 +36,7 @@ streaming anomaly detection, embedded Rust, no\_std, similarity invariance, Give
 \section{Introduction}
 Streaming anomaly detectors deployed on industrial microcontrollers, physical sensor nodes, and low-overhead telemetry agents face a stringent intersection of mathematical and systems constraints. Physically, multi-channel sensor streams undergo nuisance transformations---mounting rotations $Q \in SO(d)$, calibration gain changes $s > 0$, and thermal or workload DC offsets---while chiral inversions ($\det Q = -1$, e.g., axis sign flips or wiring reversals) often represent genuine physical faults that Gram-matrix methods cannot detect. Operationally, embedded firmware frequently prohibits heap allocation (\texttt{\#![no\_std]}), floating-point matrix inversions, and cloud round-trips, demanding predictable $<16$\,KB static SRAM budgets.
 
-Deep sequence models and offline kernel baselines assume unconstrained cloud memory and batch retraining, while lightweight univariate heuristics discard cross-channel geometric structure. \textbf{PPC-Gauge-Triad} bridges this gap through an orthogonal 3-channel gauge decomposition combined with rank-1 online precision updates and finite-sample split-conformal calibration.
+Deep sequence models and offline kernel baselines assume unconstrained cloud memory and batch retraining, while lightweight univariate heuristics discard cross-channel geometric structure. \textbf{PPC-Gauge-Triad} bridges this gap through an orthogonal 3-channel gauge decomposition combined with rank-1 online precision updates~\cite{sherman1950} and finite-sample split-conformal calibration~\cite{vovk2005conformal}.
 
 Our evidence-aligned contributions in v0.7 are:
 \begin{enumerate}
@@ -54,7 +55,7 @@ Given a multi-channel streaming window $X_t \in \mathbb{R}^{w \times d}$ ($w=8, 
 \begin{equation}
   e_t = \ln\bigl(\|X_{c,t}\|_F + 10^{-6}\bigr).
 \end{equation}
-For $\|X_{c,t}\|_F \ge 10^{-12}$, let $\tilde{X}_t = X_{c,t}/\|X_{c,t}\|_F$ and let $B \in \mathbb{R}^{w \times (w-1)}$ be the column-orthonormal non-DC temporal DCT-II basis ($B^\top B = I_{w-1}$, $\mathbf{1}_w^\top B = \mathbf{0}$). Forming $R_0 = \tilde{X}_t^\top B \in \mathbb{R}^{d \times (w-1)}$, we apply explicit $2\times 2$ left Givens rotations $G \in SO(d)$ to triangularize $R = G R_0$ ($R_{r,c}=0$ for $r>c$). To obtain a unique proper-group canonical representative on $Sim^+(d)$, we apply a diagonal sign matrix $S = \operatorname{diag}(s_1,\dots,s_d)$ with $s_i = \operatorname{sign}(R_{i,i})$ for $i < d$ and $s_d = \prod_{i=1}^{d-1} s_i$ so that $\det(S)=+1$ and $Q_{\text{eff}} = SG \in SO(d)$. Stacking the non-zero entries of $S R$ yields the canonical shape shadow $u_t \in \mathbb{R}^m$ ($m=26$ for $w=8, d=4$).
+For $\|X_{c,t}\|_F \ge 10^{-12}$, let $\tilde{X}_t = X_{c,t}/\|X_{c,t}\|_F$ and let $B \in \mathbb{R}^{w \times (w-1)}$ be the column-orthonormal non-DC temporal DCT-II basis ($B^\top B = I_{w-1}$, $\mathbf{1}_w^\top B = \mathbf{0}$). Forming $R_0 = \tilde{X}_t^\top B \in \mathbb{R}^{d \times (w-1)}$, we apply explicit $2\times 2$ left Givens rotations~\cite{golub2013matrix} $G \in SO(d)$ to triangularize $R = G R_0$ ($R_{r,c}=0$ for $r>c$). To obtain a unique proper-group canonical representative on $Sim^+(d)$, we apply a diagonal sign matrix $S = \operatorname{diag}(s_1,\dots,s_d)$ with $s_i = \operatorname{sign}(R_{i,i})$ for $i < d$ and $s_d = \prod_{i=1}^{d-1} s_i$ so that $\det(S)=+1$ and $Q_{\text{eff}} = SG \in SO(d)$. Stacking the non-zero entries of $S R$ yields the canonical shape shadow $u_t \in \mathbb{R}^m$ ($m=26$ for $w=8, d=4$).
 
 Under any proper similarity transform $X'_t = \gamma X_t Q + \mathbf{1}_w c^\top$ ($\gamma > 0$, $Q \in SO(d)$), $u(X'_t) = u(X_t)$ up to \texttt{f32} rounding. Under an improper reflection $Q_- \in O(d)\setminus SO(d)$ ($\det Q_- = -1$), the final row of $S R$ flips sign, yielding $\|u(X_t Q_-) - u(X_t)\|_2 = 2\|R_{d,:}\|_2 > 0$, whereas temporal Gram matrices $\tilde{X}_t \tilde{X}_t^\top$ are mathematically blind to reflections.
 
@@ -137,7 +138,7 @@ L1.9 & $10^6$-Window Live Stream & 0 NaN, $\text{asym}=0.0$ & 0 bad, $\text{asym
 \end{table}
 
 \subsection{Locked Operational Presets and 8-Server SMD/PSM Replay}
-Table~\ref{tab:presets} lists the three locked \emph{a priori} presets evaluated without post-hoc test-set tuning. Figure~\ref{fig:servers} presents the chronological replay across 7 Server Machine Dataset (SMD) hosts and the eBay Pooled Server Metrics (PSM) dataset reproduced offline from local \texttt{.npz} caches. The High-Recall preset reaches \textbf{78.7\%} mean AUROC (68.1\% recall, 26.8\% FAR), outperforming v0.5 (76.1\%) and classical baselines (Raw kNN 74.9\%, IsoForest 74.0\%, OC-SVM 71.8\%). The Low-FAR preset reduces mean FAR from 28.6\% to \textbf{7.6\%} at 77.1\% mean AUROC (e.g., SMD 1-1: 88.5\% AUROC / 3.9\% FAR; SMD 3-1: 88.6\% AUROC / 1.9\% FAR), explicitly trading off recall on ultra-long DC anomalies in PSM (52.2\% AUROC / 9.4\% recall).
+Table~\ref{tab:presets} lists the three locked \emph{a priori} presets evaluated without post-hoc test-set tuning. Figure~\ref{fig:servers} presents the chronological replay across 7 Server Machine Dataset (SMD)~\cite{su2019omni} hosts and the eBay Pooled Server Metrics (PSM)~\cite{abdulaal2021psm} dataset reproduced offline from local \texttt{.npz} caches. The High-Recall preset reaches \textbf{78.7\%} mean AUROC (68.1\% recall, 26.8\% FAR), outperforming v0.5 (76.1\%) and classical baselines (Raw kNN 74.9\%, IsoForest 74.0\%, OC-SVM 71.8\%). The Low-FAR preset reduces mean FAR from 28.6\% to \textbf{7.6\%} at 77.1\% mean AUROC (e.g., SMD 1-1: 88.5\% AUROC / 3.9\% FAR; SMD 3-1: 88.6\% AUROC / 1.9\% FAR), explicitly trading off recall on ultra-long DC anomalies in PSM (52.2\% AUROC / 9.4\% recall).
 
 \begin{table}[t]
 \centering
