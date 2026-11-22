@@ -24,11 +24,21 @@ jobs:
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Run Rust Level 1 tests (dev)
+      - name: Run Rust Level 1 & v0.7 AutoCal tests (dev)
         run: cargo test --verbose
+
+      - name: Verify Rustdoc (zero warnings) & runnable doctests
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: |
+          cargo doc --no-deps
+          cargo test --doc
 
       - name: Run full Rust Level 1 & v0.7 AutoCal suite incl. 1M-window L1.9 (release)
         run: cargo test --release -- --include-ignored
+
+      - name: Run Level 3 Cortex-M4F template structural dry-run
+        run: cargo run --example level3_cortex_m4f_eval_template
 
       - name: Verify Criterion benchmark compilation
         run: cargo bench --no-run
@@ -36,8 +46,18 @@ jobs:
       - name: Build release cdylib
         run: cargo build --release
 
+      - name: Compile and execute C99 ABI demo (Linux GCC)
+        if: runner.os == 'Linux'
+        run: |
+          gcc -Wall -Wextra -Werror -std=c99 -O2 -Iinclude examples/c_stream_demo.c \
+            -Ltarget/release -lppc_gauge_triad_rs -Wl,-rpath,target/release -lm -o target/c_stream_demo
+          ./target/c_stream_demo
+
       - name: Verify #![no_std] release check
         run: cargo check --release --no-default-features --lib
+
+      - name: Verify crates.io package integrity
+        run: cargo package --allow-dirty
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -78,8 +98,13 @@ jobs:
       - name: "Target 2/5: Linux x86-64 #![no_std]"
         run: cargo check --release --no-default-features --lib --target x86_64-unknown-linux-gnu
 
-      - name: "Target 3/5: ARM Cortex-M4F MCU (thumbv7em-none-eabihf, #![no_std])"
-        run: cargo rustc --release --no-default-features --target thumbv7em-none-eabihf --lib --crate-type rlib
+      - name: "Target 3/5: ARM Cortex-M4F MCU (thumbv7em-none-eabihf, #![no_std] + Level 3 DWT template)"
+        run: |
+          cargo rustc --release --no-default-features --target thumbv7em-none-eabihf --lib --crate-type rlib
+          rustc --edition 2021 --crate-type lib --target thumbv7em-none-eabihf -C opt-level=3 -D warnings \
+            --extern ppc_gauge_triad_rs=target/thumbv7em-none-eabihf/release/libppc_gauge_triad_rs.rlib \
+            examples/level3_cortex_m4f_eval_template.rs --emit=metadata \
+            -o target/thumbv7em-none-eabihf/release/level3_template_check.rmeta
 
       - name: "Target 4/5: Linux ARM64 (aarch64-unknown-linux-gnu)"
         env:

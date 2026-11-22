@@ -2,7 +2,25 @@
 name = "ppc_gauge_triad_rs"
 version = "0.7.0"
 edition = "2021"
-description = "PPC-Gauge-Triad v0.7.0: #![no_std] f32 Zero-Heap Streaming Anomaly Engine with On-Chip AutoCalBufF32 State Machine, Huber-Clamped EMA, Stable-Plateau DC Re-Lock & Dual-Stage Alarm Gate"
+rust-version = "1.75"
+authors = ["Imlevion <imlevion@gmail.com>"]
+description = "Deterministic #![no_std] f32 zero-heap streaming anomaly engine with Sim+(d) Givens-QR canonicalization, Huber-clamped EMA, and on-chip AutoCalBufF32 auto-warmup (<16 KB SRAM)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Imlevion/ppc-gauge-triad"
+homepage = "https://github.com/Imlevion/ppc-gauge-triad"
+documentation = "https://docs.rs/ppc_gauge_triad_rs"
+readme = "README.md"
+keywords = ["anomaly-detection", "no-std", "embedded", "streaming", "time-series"]
+categories = ["no-std", "embedded", "algorithms", "science"]
+exclude = [
+    "data_cache/*",
+    "notebooks/*",
+    "paper/*",
+    "benchmarks/*",
+    ".agents/*",
+    ".github/*",
+    "TUTORIAL_ANTIGRAVITY_APP_MCP.md",
+]
 
 [lib]
 name = "ppc_gauge_triad_rs"

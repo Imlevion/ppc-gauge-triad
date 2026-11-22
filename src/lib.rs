@@ -1,19 +1,94 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! PPC-Gauge-Triad v0.7.0 (`#![no_std]` f32):
-//! Orthogonal 3-channel gauge decomposition for streaming telemetry & physical sensors:
-//!   1. `s_shape`  : Exact Sim+(d) Givens-QR canonical shadow (det=+1).
-//!   2. `s_energy` : Relative log-fluctuation energy (Huber-clamped EMA for server drift OR 3-window plateau hysteresis for thermal chips).
-//!   3. `s_level`  : Per-channel DC mean drift (Huber-clamped EMA to track drift WITHOUT swallowing sustained anomalies, OR stable-plateau re-lock for abrupt chip steps).
-//!   4. Dual-Stage Alarm Gate (`step_v61`): Immediate trip (`> sev_mult * thr`) OR 2-consecutive-window confirmation.
-//!   5. On-Chip Zero-Touch Auto-Warmup (`AutoCalBufF32` / `AutoCalEngineF32` — v0.7):
-//!      Fixed-size `#![no_std]` state machine (`Warmup -> Calibrate -> Monitor`) computing split-conformal
-//!      thresholds and log1p-MAD triad normalization directly on chip.
+//! # `ppc_gauge_triad_rs` v0.7.0 — Deterministic `#![no_std]` Streaming Anomaly Engine
 //!
-//! Hardware profile:
-//!   - Core `GaugeTriadEngineF32`: ~11.4 KB static struct SRAM
-//!   - Combined `AutoCalEngineF32` (Engine + `AutoCalBufF32`): ~14.4 KB static struct SRAM (< 16 KB enforced at compile time)
-//!   - Heap allocation: 0 B | Matrix inversions: 0
+//! **PPC-Gauge-Triad** is a deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion
+//! `f32` streaming anomaly detection engine for multi-channel telemetry and embedded physical
+//! sensors (`X_t ∈ ℝ^(w × d)`, default `w = 8`, `d = 4`).
+//!
+//! ## Orthogonal 3-Channel Gauge Decomposition
+//!
+//! 1. **`s_shape` (Canonical Shape):** Orthonormal temporal DCT-II projection followed by
+//!    explicit `2 × 2` Givens-QR canonicalization on the proper similarity group `Sim+(d)`
+//!    (`det = +1`, preserving chirality under improper reflections `det = -1`), scored via a
+//!    symmetrized `K`-prototype rank-1 Sherman-Morrison precision bank (`K ≤ 4`, `0` matrix
+//!    inversions, `0` stored raw training windows).
+//! 2. **`s_energy` (Log-Fluctuation Energy):** Relative log-Frobenius energy deviation tracked
+//!    via Huber-clamped EMA (Server mode) or fast ramp EMA + 3-window hysteresis (Thermal Chip mode).
+//! 3. **`s_level` (Per-Channel DC Level):** Per-channel mean tracking via Huber-clamped EMA
+//!    (tracks slow workload drift without swallowing sustained incidents) or stable-plateau
+//!    re-lock (`dc_relock = 6` for abrupt physical regime steps).
+//! 4. **Dual-Stage Alarm Gate (`step_v61`):** Immediate trip on severe faults (`> sev_mult * thr`)
+//!    or 2-consecutive-window confirmation.
+//! 5. **On-Chip Zero-Touch Auto-Warmup (`AutoCalBufF32` / `AutoCalEngineF32` — v0.7):**
+//!    Fixed-size `#![no_std]` state machine (`Warmup -> Calibrate -> Monitor`, `MAX_CAL = 256`)
+//!    computing split-conformal quantiles and `log1p`-MAD triad normalizers directly on chip.
+//!
+//! ## Embedded Resource Profile & Design Boundaries
+//!
+//! - **Static SRAM:** [`GaugeTriadEngineF32`] = `11,624 B` (`11.35 KB`) on 64-bit / `11,604 B`
+//!   (`11.33 KB`) on ARM Cortex-M4F; combined [`AutoCalEngineF32`] = `14,768 B` (`14.42 KB`) on
+//!   64-bit / `14,744 B` (`14.40 KB`) on Cortex-M4F (`< 16 KB` enforced at compile time).
+//! - **Heap Allocation:** `0 B` (`#![no_std]`, zero `alloc`). **Matrix Inversions:** `0`.
+//! - **Unsupervised Per-Device Warmup Required:** Pure zero-shot transfer across heterogeneous
+//!   channel topologies is not claimed (`29.7%` mean AUROC across unseen servers). Zero-touch
+//!   per-device unsupervised warmup (`100–400` normal windows, `0` labels) is a design
+//!   requirement and recovers `75.3%–82.9%` mean AUROC.
+//! - **Level 3 Hardware Status:** Physical silicon cycle counts, `.map` flash/RAM footprint,
+//!   and mW power profiling remain `PENDING` external hardware measurement (see
+//!   `examples/level3_cortex_m4f_eval_template.rs` for the ARM Cortex-M4F DWT evaluation template).
+//!
+//! ## Quick Start: On-Chip Zero-Touch Auto-Warmup (`AutoCalEngineF32`)
+//!
+//! ```rust
+//! use ppc_gauge_triad_rs::{AutoCalEngineF32, AutoCalState};
+//!
+//! // Build column-orthonormal temporal DCT-II basis for w = 8 (shape 8 x 7).
+//! fn make_dct_w8() -> [f32; 56] {
+//!     let mut b = [0.0f32; 56];
+//!     for k in 0..7 {
+//!         let mut norm_sq = 0.0f32;
+//!         for t in 0..8 {
+//!             let v = (core::f32::consts::PI * (t as f32 + 0.5) * ((k + 1) as f32) / 8.0).cos();
+//!             b[t * 7 + k] = v;
+//!             norm_sq += v * v;
+//!         }
+//!         let norm = norm_sq.sqrt();
+//!         for t in 0..8 {
+//!             b[t * 7 + k] /= norm;
+//!         }
+//!     }
+//!     b
+//! }
+//!
+//! let b_dct = make_dct_w8();
+//! let mut engine = AutoCalEngineF32::zeroed();
+//! // Locked Low-FAR server preset (e_alpha=0.008, dc_alpha=0.004, huber_clip=1.5),
+//! // 75 warmup + 25 calibrate windows (100w zero-touch auto-warmup, alpha=0.05).
+//! engine.init(8, 4, 3, 5e-3, 0.01, 0.008, 0.004, &b_dct, 75, 25, 0.05, 1, 2.5, 0, 1.5, 1);
+//! assert_eq!(engine.state(), AutoCalState::Warmup);
+//!
+//! // Stream 100 normal windows through Warmup (0..75) -> Calibrate (75..100).
+//! for step in 0..100usize {
+//!     let mut win = [0.0f32; 32];
+//!     for t in 0..8 {
+//!         let phi = (t as f32) * 0.5 + (step as f32) * 0.1;
+//!         win[t * 4] = phi.sin();
+//!         win[t * 4 + 1] = phi.cos();
+//!         win[t * 4 + 2] = (2.0 * phi).sin() * 0.6;
+//!         win[t * 4 + 3] = (0.5 * phi).cos() * 0.5;
+//!     }
+//!     let res = engine.step(&win);
+//!     assert_eq!(res.alarm_combined, 0);
+//! }
+//! assert_eq!(engine.state(), AutoCalState::Monitor);
+//!
+//! // Inject a severe multi-channel fault in Monitor mode: trips immediately.
+//! let fault = [25.0f32; 32];
+//! let res = engine.step(&fault);
+//! assert_eq!(res.state, AutoCalState::Monitor as u8);
+//! assert_eq!(res.alarm_combined, 1);
+//! ```
 
 #[cfg(not(feature = "std"))]
 #[panic_handler]
@@ -21,10 +96,15 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+/// Maximum supported temporal window length `w`.
 pub const MAX_W: usize = 8;
+/// Maximum supported sensor/feature channel count `d`.
 pub const MAX_D: usize = 4;
+/// Maximum canonical shape vector dimension `m` (for `w = 8, d = 4`, `m = 26`).
 pub const MAX_M: usize = 26;
+/// Maximum number of online shape prototypes `k_max`.
 pub const MAX_K: usize = 4;
+/// Fixed on-chip calibration buffer capacity (`n_cal <= MAX_CAL`) for [`AutoCalBufF32`].
 pub const MAX_CAL: usize = 256;
 
 #[inline(always)]
@@ -158,31 +238,62 @@ fn fit_log1p_mad(raw: &[f32], scratch: &mut [f32; MAX_CAL]) -> (f32, f32) {
     (med, mad)
 }
 
+/// Core `#![no_std]` `f32` PPC-Gauge-Triad streaming anomaly engine (`~11.4 KB` static SRAM).
+///
+/// Maintains up to `MAX_K = 4` symmetrized Sherman-Morrison precision prototypes over
+/// `Sim+(d)` canonical window shadows alongside dual-mode environmental EMA trackers
+/// (`s_energy` and `s_level`) and dual-stage alarm streaks.
+///
+/// The C-compatible `#[repr(C)]` layout matches `include/ppc_gauge_triad.h` identically.
 #[repr(C)]
 pub struct GaugeTriadEngineF32 {
+    /// Temporal window length `w` (`<= MAX_W`).
     pub w: usize,
+    /// Number of channels `d` (`<= MAX_D`).
     pub d: usize,
+    /// Canonical shape vector dimension `m` (`<= MAX_M`; `26` for `w = 8, d = 4`).
     pub m: usize,
+    /// Maximum prototype bank capacity (`<= MAX_K`).
     pub k_max: usize,
+    /// Currently active prototypes in `[0, k_max]`.
     pub k_active: usize,
+    /// Initial isotropic covariance regularization `lam0`.
     pub lam0: f32,
+    /// Minimum Sherman-Morrison learning rate floor `alpha_min`.
     pub alpha_min: f32,
+    /// Log-energy EMA smoothing rate `e_alpha`.
     pub e_alpha: f32,
+    /// Per-channel DC level EMA smoothing rate `dc_alpha`.
     pub dc_alpha: f32,
+    /// Tracked log-fluctuation energy mean.
     pub e_ema: f32,
+    /// Tracked log-fluctuation energy variance.
     pub e_var: f32,
+    /// Per-channel tracked DC means.
     pub dc_ema: [f32; MAX_D],
+    /// Per-channel tracked DC variances.
     pub dc_var: [f32; MAX_D],
+    /// Previous window DC means (used for stable-plateau re-lock).
     pub prev_dc: [f32; MAX_D],
+    /// Non-zero once environmental EMAs have been initialized.
     pub e_init: u8,
+    /// Energy hysteresis streak counter (Thermal Chip mode).
     pub streak: u8,
+    /// Stable-plateau DC re-lock streak counter (Thermal Chip mode).
     pub dc_streak: u8,
+    /// Consecutive `s_shape > shape_gate` counter.
     pub sh_alarm_streak: u8,
+    /// Consecutive `s_energy > imp_thr` counter.
     pub en_alarm_streak: u8,
+    /// Consecutive `s_level > lvl_thr` counter.
     pub lv_alarm_streak: u8,
+    /// Row-major orthonormal temporal DCT-II basis (`w × (w - 1)`).
     pub b_dct: [f32; MAX_W * MAX_W],
+    /// Online canonical shape prototype means.
     pub means: [[f32; MAX_M]; MAX_K],
+    /// Symmetrized rank-1 Sherman-Morrison precision matrices (`m × m` each).
     pub precs: [[f32; MAX_M * MAX_M]; MAX_K],
+    /// Observation counts per prototype.
     pub counts: [u32; MAX_K],
 }
 
@@ -217,6 +328,7 @@ impl GaugeTriadEngineF32 {
         }
     }
 
+    /// Initialize (or reset) the engine parameters and copy the orthonormal `w × (w - 1)` DCT-II basis.
     pub fn init(
         &mut self, w: usize, d: usize, k_max: usize,
         lam0: f32, alpha_min: f32, e_alpha: f32, dc_alpha: f32, b_dct: &[f32],
@@ -250,6 +362,11 @@ impl GaugeTriadEngineF32 {
         for k in 0..MAX_K { self.counts[k] = 0; }
     }
 
+    /// Project a row-major `w × d` window `x_win` into its `Sim+(d)` canonical shadow `u_out`,
+    /// per-channel DC means `dc_out`, and log-fluctuation energy `ln(||X_c||_F + 1e-6)`.
+    ///
+    /// Invariant under proper rotations `SO(d)` (`det = +1`), positive uniform scaling, and
+    /// per-channel DC offsets, while remaining sensitive to chiral reflections (`det = -1`).
     #[inline]
     pub fn canonicalize(&self, x_win: &[f32], u_out: &mut [f32; MAX_M], dc_out: &mut [f32; MAX_D]) -> f32 {
         let w = self.w;
@@ -395,9 +512,35 @@ impl GaugeTriadEngineF32 {
         for i in 0..m { self.means[k][i] += a * diff[i]; }
     }
 
-    /// Returns `(s_shape, s_energy, s_level, alarm_dual)`.
-    /// - If `huber_clip > 0.0` (Server Telemetry mode): uses Huber-clamped EMA on energy & DC level -> tracks slow normal drift WITHOUT swallowing sustained incidents!
-    /// - If `huber_clip <= 0.0` (Thermal Chip mode): uses fast ramp EMA + 3-win energy hysteresis + `dc_relock` stable-plateau re-lock.
+    /// Process a single `w × d` window and return `(s_shape, s_energy, s_level, alarm_dual)`.
+    ///
+    /// - If `huber_clip > 0.0` (Server Telemetry mode): uses Huber-clamped EMA on energy and DC
+    ///   level to track slow normal drift without swallowing sustained incidents.
+    /// - If `huber_clip <= 0.0` (Thermal / Sensor Chip mode): uses fast ramp EMA, 3-window energy
+    ///   hysteresis, and `dc_relock` stable-plateau re-lock.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ppc_gauge_triad_rs::GaugeTriadEngineF32;
+    ///
+    /// let mut b = [0.0f32; 56];
+    /// for k in 0..7 {
+    ///     let mut s = 0.0f32;
+    ///     for t in 0..8 {
+    ///         let v = (core::f32::consts::PI * (t as f32 + 0.5) * ((k + 1) as f32) / 8.0).cos();
+    ///         b[t * 7 + k] = v;
+    ///         s += v * v;
+    ///     }
+    ///     for t in 0..8 { b[t * 7 + k] /= s.sqrt(); }
+    /// }
+    /// let mut eng = GaugeTriadEngineF32::zeroed();
+    /// eng.init(8, 4, 3, 5e-3, 0.01, 0.008, 0.004, &b);
+    ///
+    /// let win = [0.1f32; 32];
+    /// let (sh, en, lv, alarm) = eng.step_v61(&win, 1, 1e20, 1, 10.0, 10.0, 2.5, 0, 1.5);
+    /// assert!(sh.is_finite() && en.is_finite() && lv.is_finite() && alarm == 0);
+    /// ```
     #[inline]
     pub fn step_v61(
         &mut self, x_win: &[f32], learn: u8, shape_gate: f32, adapt_env: u8,
@@ -529,62 +672,102 @@ impl GaugeTriadEngineF32 {
 // v0.7 On-Chip Zero-Touch Auto-Warmup State Machine (`AutoCalBufF32`)
 // ---------------------------------------------------------------------------
 
+/// Operating phase of the on-chip [`AutoCalBufF32`] state machine.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AutoCalState {
+    /// Unsupervised online prototype & EMA warmup phase (`0`).
     Warmup = 0,
+    /// Frozen-model split-conformal & `log1p`-MAD calibration collection phase (`1`).
     Calibrate = 1,
+    /// Active monitoring phase with locked on-chip thresholds and dual-stage gating (`2`).
     Monitor = 2,
 }
 
+/// Per-window output returned by [`AutoCalBufF32::step`] and [`AutoCalEngineF32::step`].
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct AutoCalStepResult {
+    /// Phase in which this window was processed (`0 = Warmup`, `1 = Calibrate`, `2 = Monitor`).
     pub state: u8,
+    /// Per-channel dual-stage alarm output from `step_v61` (`0` or `1`).
     pub alarm_channel: u8,
+    /// Combined triad dual-stage alarm output (`0` or `1`; always `0` before `Monitor`).
     pub alarm_combined: u8,
+    /// Explicit struct alignment padding byte.
     pub _pad: u8,
+    /// Raw canonical shape Mahalanobis distance `s_shape`.
     pub s_shape: f32,
+    /// Raw relative log-energy deviation `s_energy`.
     pub s_energy: f32,
+    /// Raw per-channel DC level deviation `s_level`.
     pub s_level: f32,
+    /// Normalized combined triad anomaly score (`0.0` prior to `Monitor`).
     pub s_combined: f32,
 }
 
 /// Fixed-size `#![no_std]` on-chip calibration buffer & state machine (`Warmup -> Calibrate -> Monitor`).
 ///
-/// Supports per-device unsupervised auto-warmup (`100–400`+ windows; up to `MAX_CAL = 256` calibration
-/// windows) with `0 B` heap allocation and `~3.07 KB` static SRAM.
+/// Supports per-device unsupervised auto-warmup (`100–400`+ windows; up to `MAX_CAL = 256`
+/// calibration windows) with `0 B` heap allocation and `3,140 B` (`3.07 KB`) static SRAM.
 #[repr(C)]
 pub struct AutoCalBufF32 {
+    /// Current state discriminant (`0 = Warmup`, `1 = Calibrate`, `2 = Monitor`).
     pub state: u8,
+    /// Whether environmental EMA adaptation is enabled during `Monitor` (`0` or `1`).
     pub adapt_env: u8,
+    /// Stable-plateau DC re-lock window threshold (`0` for Server mode, `6` for Thermal Chip mode).
     pub dc_relock: u8,
+    /// Whether dual-stage gating is enabled on the combined score (`0` or `1`).
     pub use_dual: u8,
+    /// Consecutive `s_combined > thr_combined` counter.
     pub comb_alarm_streak: u8,
+    /// Explicit 3-byte alignment padding.
     pub _pad0: [u8; 3],
+    /// Target number of unsupervised warmup windows (`>= 1`).
     pub n_warmup: u16,
+    /// Target number of calibration windows (`1..=MAX_CAL`).
     pub n_cal: u16,
+    /// Completed warmup windows.
     pub warmup_count: u16,
+    /// Collected calibration windows.
     pub cal_count: u16,
+    /// Split-conformal miscoverage rate `alpha` (e.g. `0.05`).
     pub alpha: f32,
+    /// Dual-stage immediate severity multiplier (e.g. `2.5`).
     pub sev_mult: f32,
+    /// Huber-clamp factor (`> 0.0` for Server mode, `0.0` for Thermal Chip mode).
     pub huber_clip: f32,
+    /// Calibrated split-conformal shape gate threshold.
     pub thr_shape: f32,
+    /// Calibrated split-conformal energy threshold.
     pub thr_energy: f32,
+    /// Calibrated split-conformal DC level threshold.
     pub thr_level: f32,
+    /// Calibrated split-conformal combined triad score threshold.
     pub thr_combined: f32,
+    /// Calibration median of `ln(1 + s_shape)`.
     pub sh_med: f32,
+    /// Calibration scale `1.4826 * MAD + 0.1` of `ln(1 + s_shape)`.
     pub sh_mad: f32,
+    /// Calibration median of `ln(1 + s_energy)`.
     pub en_med: f32,
+    /// Calibration scale `1.4826 * MAD + 0.1` of `ln(1 + s_energy)`.
     pub en_mad: f32,
+    /// Calibration median of `ln(1 + s_level)`.
     pub lv_med: f32,
+    /// Calibration scale `1.4826 * MAD + 0.1` of `ln(1 + s_level)`.
     pub lv_mad: f32,
+    /// Fixed-size buffer storing calibration `s_shape` values.
     pub cal_sh: [f32; MAX_CAL],
+    /// Fixed-size buffer storing calibration `s_energy` values.
     pub cal_en: [f32; MAX_CAL],
+    /// Fixed-size buffer storing calibration `s_level` values.
     pub cal_lv: [f32; MAX_CAL],
 }
 
 impl AutoCalBufF32 {
+    /// Const zero-initializer for static `.bss` placement.
     pub const fn zeroed() -> Self {
         Self {
             state: AutoCalState::Warmup as u8,
@@ -616,6 +799,7 @@ impl AutoCalBufF32 {
         }
     }
 
+    /// Initialize (or reset) the calibration state machine with locked a priori parameters.
     pub fn init(
         &mut self,
         n_warmup: u16,
@@ -658,6 +842,7 @@ impl AutoCalBufF32 {
         self.lv_mad = 0.1;
     }
 
+    /// Return the current [`AutoCalState`] phase.
     #[inline]
     pub fn state(&self) -> AutoCalState {
         match self.state {
@@ -667,6 +852,7 @@ impl AutoCalBufF32 {
         }
     }
 
+    /// Compute the calibrated `log1p`-MAD normalized combined triad score.
     #[inline]
     pub fn combined_score(&self, s_shape: f32, s_energy: f32, s_level: f32) -> f32 {
         let rz_sh = (ln_f32(1.0 + sanitize_nonneg_f32(s_shape)) - self.sh_med) / self.sh_mad;
@@ -819,15 +1005,20 @@ impl AutoCalBufF32 {
     }
 }
 
-/// Complete single-struct Zero-Touch Auto-Warmup Engine (`GaugeTriadEngineF32` + `AutoCalBufF32`).
-/// Total static SRAM is enforced to be `< 16 KB` at compile time on every target.
+/// Complete single-struct Zero-Touch Auto-Warmup Engine ([`GaugeTriadEngineF32`] + [`AutoCalBufF32`]).
+///
+/// Total static SRAM is enforced to remain `< 16 KB` at compile time on every target
+/// (`14,768 B` on 64-bit, `14,744 B` on 32-bit ARM Cortex-M4F).
 #[repr(C)]
 pub struct AutoCalEngineF32 {
+    /// Core PPC-Gauge-Triad engine (`~11.4 KB`).
     pub engine: GaugeTriadEngineF32,
+    /// Fixed-size on-chip calibration buffer and state machine (`~3.1 KB`).
     pub cal: AutoCalBufF32,
 }
 
 impl AutoCalEngineF32 {
+    /// Const zero-initializer suitable for static `.bss` storage on bare-metal MCUs.
     pub const fn zeroed() -> Self {
         Self {
             engine: GaugeTriadEngineF32::zeroed(),
@@ -835,6 +1026,7 @@ impl AutoCalEngineF32 {
         }
     }
 
+    /// Initialize both the core engine and the on-chip `AutoCalBufF32` state machine.
     pub fn init(
         &mut self,
         w: usize,
@@ -858,11 +1050,13 @@ impl AutoCalEngineF32 {
         self.cal.init(n_warmup, n_cal, alpha, adapt_env, sev_mult, dc_relock, huber_clip, use_dual);
     }
 
+    /// Advance the combined engine by one `w × d` row-major window.
     #[inline]
     pub fn step(&mut self, x_win: &[f32]) -> AutoCalStepResult {
         self.cal.step(&mut self.engine, x_win)
     }
 
+    /// Return the current [`AutoCalState`] phase.
     #[inline]
     pub fn state(&self) -> AutoCalState {
         self.cal.state()
@@ -877,11 +1071,17 @@ const _: () = assert!(core::mem::size_of::<AutoCalEngineF32>() < 16 * 1024);
 // C FFI Exports (v0.6.1 compatible + v0.7 AutoCal)
 // ---------------------------------------------------------------------------
 
+/// Return `sizeof(GaugeTriadEngineF32)` in bytes for ABI validation and static buffer sizing.
 #[no_mangle]
 pub extern "C" fn ppc_triad_engine_bytes() -> usize {
     core::mem::size_of::<GaugeTriadEngineF32>()
 }
 
+/// Initialize a caller-allocated [`GaugeTriadEngineF32`] instance via C FFI.
+///
+/// # Safety
+/// - `eng` must be a valid, aligned, writable pointer to a `GaugeTriadEngineF32`.
+/// - `b_dct` must point to at least `w * (w - 1)` readable `f32` values (`2 <= w <= MAX_W`, `1 <= d <= MAX_D`).
 #[no_mangle]
 pub unsafe extern "C" fn ppc_triad_init(
     eng: *mut GaugeTriadEngineF32, w: usize, d: usize, k_max: usize,
@@ -891,6 +1091,13 @@ pub unsafe extern "C" fn ppc_triad_init(
     (*eng).init(w, d, k_max, lam0, alpha_min, e_alpha, dc_alpha, b_s);
 }
 
+/// Process a batch of `n_samples` row-major `w × d` windows through [`GaugeTriadEngineF32::step_v61`].
+///
+/// # Safety
+/// - `eng` must point to an initialized [`GaugeTriadEngineF32`].
+/// - `x_batch` must point to at least `n_samples * w * d` readable `f32` values.
+/// - `out_shape`, `out_energy`, `out_level`, and `out_alarm` must each point to at least
+///   `n_samples` writable elements and must not alias `x_batch`.
 #[no_mangle]
 pub unsafe extern "C" fn ppc_triad_run_stream_v61(
     eng: *mut GaugeTriadEngineF32, x_batch: *const f32, n_samples: usize,
@@ -912,16 +1119,23 @@ pub unsafe extern "C" fn ppc_triad_run_stream_v61(
     }
 }
 
+/// Return `sizeof(AutoCalBufF32)` in bytes for ABI validation.
 #[no_mangle]
 pub extern "C" fn ppc_autocal_buf_bytes() -> usize {
     core::mem::size_of::<AutoCalBufF32>()
 }
 
+/// Return `sizeof(AutoCalEngineF32)` in bytes for ABI validation and static buffer sizing.
 #[no_mangle]
 pub extern "C" fn ppc_autocal_engine_bytes() -> usize {
     core::mem::size_of::<AutoCalEngineF32>()
 }
 
+/// Initialize a caller-allocated [`AutoCalEngineF32`] instance via C FFI.
+///
+/// # Safety
+/// - `eng` must be a valid, aligned, writable pointer to an [`AutoCalEngineF32`].
+/// - `b_dct` must point to at least `w * (w - 1)` readable `f32` values (`2 <= w <= MAX_W`, `1 <= d <= MAX_D`).
 #[no_mangle]
 pub unsafe extern "C" fn ppc_autocal_init(
     eng: *mut AutoCalEngineF32,
@@ -949,11 +1163,23 @@ pub unsafe extern "C" fn ppc_autocal_init(
     );
 }
 
+/// Query the current state discriminant (`0 = Warmup`, `1 = Calibrate`, `2 = Monitor`).
+///
+/// # Safety
+/// - `eng` must point to an initialized [`AutoCalEngineF32`].
 #[no_mangle]
 pub unsafe extern "C" fn ppc_autocal_state(eng: *const AutoCalEngineF32) -> u8 {
     (*eng).cal.state
 }
 
+/// Process a batch of `n_samples` windows through the on-chip [`AutoCalEngineF32::step`] pipeline.
+///
+/// # Safety
+/// - `eng` must point to an initialized [`AutoCalEngineF32`].
+/// - `x_batch` must point to at least `n_samples * w * d` readable `f32` values.
+/// - All output buffers (`out_state`, `out_shape`, `out_energy`, `out_level`, `out_combined`,
+///   `out_alarm_combined`) must each point to at least `n_samples` writable elements and must not
+///   alias `x_batch`.
 #[no_mangle]
 pub unsafe extern "C" fn ppc_autocal_run_stream(
     eng: *mut AutoCalEngineF32,

@@ -82,8 +82,14 @@ python benchmarks/run_benchmarks.py --all --offline
 ## Repository Layout
 
 ```text
-├── Cargo.toml                         # Rust crate manifest (rlib + cdylib, #![no_std])
+├── Cargo.toml                         # crates.io-ready manifest (MIT OR Apache-2.0, #![no_std])
+├── LICENSE-MIT / LICENSE-APACHE       # Dual open-source licenses
+├── CHANGELOG.md                       # Versioned release notes (v0.6.1 -> v0.7.0)
 ├── src/lib.rs                         # Core GaugeTriadEngineF32, v0.7 AutoCalBufF32/AutoCalEngineF32 & C FFI
+├── include/ppc_gauge_triad.h          # Official C99 / C++ ABI header matching Rust #[repr(C)]
+├── examples/
+│   ├── c_stream_demo.c                # Zero-heap C99 streaming & ABI verification demo
+│   └── level3_cortex_m4f_eval_template.rs  # ARM Cortex-M4F DWT cycle-counter eval template (Level 3 PENDING)
 ├── tests/
 │   ├── level1_invariants.rs           # Local Rust Level 1 invariant (L1.1–L1.9) & embedded constraint tests
 │   └── autocal_v07.rs                 # v0.7 on-chip AutoCalBufF32 state machine, SRAM & FFI parity tests
@@ -92,8 +98,12 @@ python benchmarks/run_benchmarks.py --all --offline
 │   ├── ppc_triad_wrapper.py           # Cross-platform ctypes wrapper + pure-NumPy L1.8 reference
 │   ├── dataset_cache.py               # Atomic local .npz cache for SMD & PSM (no pandas)
 │   ├── run_benchmarks.py              # Local CLI replacing Google Colab
+│   ├── generate_paper_figures.py      # 300-DPI publication figure generator from offline cache
 │   └── test_local_suite.py            # Automated unittest/pytest suite
-├── .github/workflows/ci.yml           # CI: Level 1 tests + 5-target cross-compilation
+├── paper/
+│   ├── ppc_gauge_triad.tex            # arXiv / IEEE preprint manuscript (100% evidence-aligned)
+│   └── figures/                       # 300-DPI PNG/PDF figures + JSON metrics provenance
+├── .github/workflows/ci.yml           # CI: Rustdoc, doctests, Level 1, C99 demo, cargo package, 5-target matrix
 ├── notebooks/                         # Historical Colab verification notebook
 ├── AGENTS.md                          # Engineering constraints & roadmap
 └── VALIDATION_REPORT_v061.md          # Complete v0.6.1 validation evidence
