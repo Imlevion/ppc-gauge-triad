@@ -19,11 +19,20 @@ Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) stre
 
 ## Validation Status
 
-- **Level 1 (Algorithmic Invariants):** **9 / 9 PASSED** — verified via local `cargo test` (`tests/level1_invariants.rs`, `tests/autocal_v07.rs`) and Python L1.8 parity suite (`benchmarks/test_local_suite.py`).
-- **Level 2 (Software & Real-World Benchmarks):** **VERIFIED** — 5/5 cross-compile targets, 8 real servers (SMD + PSM), OpenML physical/trajectory benchmarks, 50,000-window 5-seed streaming, cross-device auto-warmup curve (including v0.7 on-chip `AutoCalEngineF32`: `~14.4 KB` total static SRAM `< 16 KB`, `0 B` heap, `0` matrix inversions).
-- **Level 3 (Physical Hardware Verification):** **PENDING** — physical MCU/FPGA silicon cycle counts, `.map` flash/RAM measurements, and mW power profiling are not claimed until measured directly on hardware (`probe-rs` / DWT / power profiler).
+### Automated CI vs. Local Reproducible Research Benchmarks
+
+| Verification Layer | Execution Mode | Scope Covered | Status |
+| :--- | :--- | :--- | :--- |
+| **Automated GitHub CI** (`.github/workflows/ci.yml`) | Runs on every push / PR (`ubuntu-latest` & `windows-latest`) | Rust Level 1 invariants (`L1.1–L1.9`, incl. 1M-window live stream) & `AutoCalBufF32` tests (`19` tests), Rustdoc `-D warnings`, doctests (`2/2`), C99 ABI demo (`gcc -Wall -Wextra -Werror -std=c99`), Python unit + `L1.8` parity tests, `cargo package`, Criterion compile check, and **5-target cross-compilation** (incl. `#![no_std]` `rlib` + Cortex-M4F template with its own firmware `#[panic_handler]`). *Does not download/replay full SMD/PSM datasets on CI runners.* | **PASS** |
+| **Local Reproducible Research Benchmarks** (`benchmarks/`) | Reproduced locally from cached offline `.npz` datasets (`--all --offline`) | 8-server chronological SMD + PSM ablation (`78.7%` High-Recall / `77.1%` Low-FAR at `7.6%` FAR), Test 3B on-chip Auto-Warmup curve (`29.7%` 0w → `82.9%` 400w), Test 5 50k-window 5-seed streaming (`0.30% ± 0.13%` FAR, `100.0%` recall), OpenML physical/trajectory benchmarks, Criterion host CPU timings, and 300-DPI paper figures (`generate_paper_figures.py`). | **VERIFIED (Level 2)** |
+| **Physical Hardware Verification (Level 3)** | Real MCU/FPGA silicon (`examples/level3_cortex_m4f_eval_template.rs`, Issue [#3](https://github.com/Imlevion/ppc-gauge-triad/issues/3)) | DWT cycle counts, full firmware `.elf`/`.map` Flash & RAM (incl. stack/ISRs), inline mW power profiling, and real IMU/thermal sensor streams via `probe-rs` / `defmt`. | **PENDING** |
 
 See [`VALIDATION_REPORT_v061.md`](VALIDATION_REPORT_v061.md) for the complete evidence table and [`AGENTS.md`](AGENTS.md) for strict engineering rules and roadmap milestones.
+
+### `#![no_std]` Embedded Integration & Memory Scope
+
+- **Library vs. Final Firmware (`#[panic_handler]`):** Adding `ppc_gauge_triad_rs = { version = "0.7", default-features = false }` compiles a pure `#![no_std]` Rust library (`rlib`) **without** defining a `#[panic_handler]`. Your final bare-metal firmware binary **must** provide its own `#[panic_handler]` (e.g., `panic-halt`, `panic-probe`, or `panic-rtt-target`) and runtime startup/FPU initialization — avoiding duplicate `panic_impl` linker conflicts. Enable the opt-in `panic-handler` Cargo feature *only* when building a standalone `#![no_std]` `cdylib` outside a Rust firmware binary.
+- **Engine Struct SRAM (`< 16 KB`) vs. Total Firmware RAM:** The compile-time assertions verify **only the engine's static `.bss` struct size** (`11,604 B` core / `14,744 B` `AutoCalEngineF32` on ARM Cortex-M4F, `0 B` heap). This does **not** guarantee that a complete user firmware fits within `16 KB` RAM — final firmware RAM sizing must also budget call stack (including a `1,024 B` stack scratch array during `finalize_calibration()`), interrupt/ISR frames, DMA/ADC/sensor ring buffers, logging buffers, and BSP/RTOS runtime overhead measured on the final `.elf`/`.map`.
 
 ---
 
@@ -60,9 +69,11 @@ cargo test
 # Full Level 1 suite including 1,000,000-window live online stability (L1.9, ~3–6s)
 cargo test --release -- --include-ignored
 
-# Verify #![no_std] release compilation & ARM Cortex-M4F target
-cargo check --release --no-default-features --lib
+# Verify #![no_std] library (no panic handler) & ARM Cortex-M4F target
+cargo rustc --release --no-default-features --lib --crate-type rlib
 cargo rustc --release --no-default-features --target thumbv7em-none-eabihf --lib --crate-type rlib
+# Optional: verify standalone #![no_std] cdylib check with opt-in panic-handler feature
+cargo check --release --no-default-features --features panic-handler --lib
 
 # Run Criterion host CPU micro-benchmarks
 cargo bench --bench triad_bench

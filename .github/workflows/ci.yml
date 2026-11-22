@@ -53,8 +53,10 @@ jobs:
             -Ltarget/release -lppc_gauge_triad_rs -Wl,-rpath,target/release -lm -o target/c_stream_demo
           ./target/c_stream_demo
 
-      - name: Verify #![no_std] release check
-        run: cargo check --release --no-default-features --lib
+      - name: Verify #![no_std] library (no panic_handler) & opt-in standalone cdylib check
+        run: |
+          cargo rustc --release --no-default-features --lib --crate-type rlib
+          cargo check --release --no-default-features --features panic-handler --lib
 
       - name: Verify crates.io package integrity
         run: cargo package --allow-dirty
@@ -95,8 +97,10 @@ jobs:
       - name: "Target 1/5: Linux x86-64 cdylib (std)"
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
-      - name: "Target 2/5: Linux x86-64 #![no_std]"
-        run: cargo check --release --no-default-features --lib --target x86_64-unknown-linux-gnu
+      - name: "Target 2/5: Linux x86-64 #![no_std] (library rlib + opt-in panic-handler cdylib)"
+        run: |
+          cargo rustc --release --no-default-features --lib --crate-type rlib --target x86_64-unknown-linux-gnu
+          cargo check --release --no-default-features --features panic-handler --lib --target x86_64-unknown-linux-gnu
 
       - name: "Target 3/5: ARM Cortex-M4F MCU (thumbv7em-none-eabihf, #![no_std] + Level 3 DWT template)"
         run: |
