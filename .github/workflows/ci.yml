@@ -119,3 +119,37 @@ jobs:
         env:
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
         run: cargo build --release --target x86_64-pc-windows-gnu
+
+  level25-cortex-m4f-elf-and-qemu:
+    name: Level 2.5 Cortex-M4F Linked ELF & QEMU Execution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM binutils & QEMU Cortex-M4F emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-arm-none-eabi qemu-system-arm
+
+      - name: Install stable Rust toolchain with thumbv7em-none-eabihf
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+
+      - name: Build turnkey bare-metal STM32F411 / Cortex-M4F .elf (zero warnings)
+        working-directory: firmware/cortex-m4f-eval
+        run: cargo build --release
+
+      - name: Inspect real linked .elf Flash & Static RAM footprint (arm-none-eabi-size + Python)
+        run: |
+          arm-none-eabi-size -A firmware/cortex-m4f-eval/target/thumbv7em-none-eabihf/release/ppc-m4f-eval
+          python3 benchmarks/inspect_elf.py
+          python3 -c "import json, subprocess; d=json.loads(subprocess.check_output(['python3','benchmarks/inspect_elf.py','--json'])); assert d['breakdown'].get('.data', 0) == 0, d; assert d['total_static_ram_bytes'] < 16384, d; print('ELF_ASSERT_PASS: Flash=', d['total_flash_bytes'], 'B, StaticRAM=', d['total_static_ram_bytes'], 'B')"
+
+      - name: Build & execute compiled ARMv7E-M FPU binary on QEMU (mps2-an386)
+        working-directory: firmware/cortex-m4f-eval
+        run: |
+          cargo build --release --features qemu
+          timeout 30 qemu-system-arm -cpu cortex-m4 -machine mps2-an386 -nographic \
+            -semihosting-config enable=on,target=native \
+            -kernel target/thumbv7em-none-eabihf/release/ppc-m4f-eval

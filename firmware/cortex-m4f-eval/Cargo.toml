@@ -1,0 +1,26 @@
+[package]
+name = "ppc-m4f-eval"
+version = "0.7.0"
+edition = "2021"
+publish = false
+description = "Turnkey bare-metal ARM Cortex-M4F (thumbv7em-none-eabihf) Level 2.5 ELF/QEMU & Level 3 DWT evaluation firmware for ppc_gauge_triad_rs"
+
+[dependencies]
+ppc_gauge_triad_rs = { path = "../..", default-features = false }
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+panic-halt = "1.0"
+cortex-m-semihosting = { version = "0.5", optional = true }
+
+[features]
+default = []
+# Enable ONLY for Level 2.5 functional ARMv7E-M execution on QEMU (`mps2-an386`).
+# Never enable when measuring real silicon `.elf` size or flashing physical STM32/nRF52840 boards.
+qemu = ["dep:cortex-m-semihosting"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = true
+panic = "abort"

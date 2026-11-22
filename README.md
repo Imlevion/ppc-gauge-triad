@@ -23,9 +23,10 @@ Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) stre
 
 | Verification Layer | Execution Mode | Scope Covered | Status |
 | :--- | :--- | :--- | :--- |
-| **Automated GitHub CI** (`.github/workflows/ci.yml`) | Runs on every push / PR (`ubuntu-latest` & `windows-latest`) | Rust Level 1 invariants (`L1.1–L1.9`, incl. 1M-window live stream) & `AutoCalBufF32` tests (`19` tests), Rustdoc `-D warnings`, doctests (`2/2`), C99 ABI demo (`gcc -Wall -Wextra -Werror -std=c99`), Python unit + `L1.8` parity tests, `cargo package`, Criterion compile check, and **5-target cross-compilation** (incl. `#![no_std]` `rlib` + Cortex-M4F template with its own firmware `#[panic_handler]`). *Does not download/replay full SMD/PSM datasets on CI runners.* | **PASS** |
+| **Automated GitHub CI** (`.github/workflows/ci.yml`) | Runs on every push / PR (`ubuntu-latest` & `windows-latest`) | Rust Level 1 invariants (`L1.1–L1.9`, incl. 1M-window live stream) & `AutoCalBufF32` tests (`19` tests), Rustdoc `-D warnings`, doctests (`2/2`), C99 ABI demo (`gcc -Wall -Wextra -Werror -std=c99`), Python unit + `L1.8` parity tests, `cargo package`, Criterion compile check, **5-target cross-compilation**, and **Level 2.5 Cortex-M4F linked `.elf` + live QEMU execution** (`mps2-an386`). *Does not download/replay full SMD/PSM datasets on CI runners.* | **PASS** |
 | **Local Reproducible Research Benchmarks** (`benchmarks/`) | Reproduced locally from cached offline `.npz` datasets (`--all --offline`) | 8-server chronological SMD + PSM ablation (`78.7%` High-Recall / `77.1%` Low-FAR at `7.6%` FAR), Test 3B on-chip Auto-Warmup curve (`29.7%` 0w → `82.9%` 400w), Test 5 50k-window 5-seed streaming (`0.30% ± 0.13%` FAR, `100.0%` recall), OpenML physical/trajectory benchmarks, Criterion host CPU timings, and 300-DPI paper figures (`generate_paper_figures.py`). | **VERIFIED (Level 2)** |
-| **Physical Hardware Verification (Level 3)** | Real MCU/FPGA silicon (`examples/level3_cortex_m4f_eval_template.rs`, Issue [#3](https://github.com/Imlevion/ppc-gauge-triad/issues/3)) | DWT cycle counts, full firmware `.elf`/`.map` Flash & RAM (incl. stack/ISRs), inline mW power profiling, and real IMU/thermal sensor streams via `probe-rs` / `defmt`. | **PENDING** |
+| **Linked Cortex-M4F `.elf` & QEMU Proof (Level 2.5)** | Turnkey bare-metal crate (`firmware/cortex-m4f-eval/`, automated in CI) | Real linked `thumbv7em-none-eabihf` `.elf` (`cortex-m-rt` + `panic-halt` + `ppc_gauge_triad_rs` `default-features = false`): **Total Flash `23,624 B` (`23.07 KB`)**, **`.data = 0 B`**, **Total Static RAM `.bss = 14,784 B` (`14.44 KB`)**, plus live functional ARMv7E-M FPU execution (`400w` Auto-Warmup + fault trip) on QEMU `mps2-an386`. *Emulation is functional proof only — never silicon cycle timing.* | **VERIFIED (Level 2.5)** |
+| **Physical Hardware Verification (Level 3)** | Real MCU/FPGA silicon (`firmware/cortex-m4f-eval/`, Issue [#3](https://github.com/Imlevion/ppc-gauge-triad/issues/3)) | Physical DWT cycle counts (`DWT_CYCCNT`), board-clock µs latency, full target-board `.map`, inline mW power profiling, and real IMU/thermal sensor streams via `probe-rs` / `defmt`. | **PENDING** |
 
 See [`VALIDATION_REPORT_v061.md`](VALIDATION_REPORT_v061.md) for the complete evidence table and [`AGENTS.md`](AGENTS.md) for strict engineering rules and roadmap milestones.
 
@@ -117,6 +118,8 @@ python benchmarks/run_benchmarks.py --all --offline
 ├── examples/
 │   ├── c_stream_demo.c                # Zero-heap C99 streaming & ABI verification demo
 │   └── level3_cortex_m4f_eval_template.rs  # ARM Cortex-M4F DWT cycle-counter eval template (Level 3 PENDING)
+├── firmware/
+│   └── cortex-m4f-eval/               # Turnkey bare-metal Cortex-M4F .elf (Level 2.5 ELF/QEMU + Level 3 flash)
 ├── tests/
 │   ├── level1_invariants.rs           # Local Rust Level 1 invariant (L1.1–L1.9) & embedded constraint tests
 │   └── autocal_v07.rs                 # v0.7 on-chip AutoCalBufF32 state machine, SRAM & FFI parity tests

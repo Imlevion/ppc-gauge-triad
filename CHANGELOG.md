@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Level 2.5 Turnkey ARM Cortex-M4F Firmware (`firmware/cortex-m4f-eval/`) & ELF Inspector (`benchmarks/inspect_elf.py`):**
+  - Standalone `#![no_std]` `#![no_main]` `cortex-m-rt` + `panic-halt` firmware linking `ppc_gauge_triad_rs`
+    (`default-features = false`) to a real `thumbv7em-none-eabihf` `.elf` (`Total Flash = 23,624 B / 23.07 KB`,
+    `.data = 0 B`, `Total Static RAM .bss = 14,784 B / 14.44 KB`).
+  - Opt-in `--features qemu` target executing the compiled ARMv7E-M FPU binary on QEMU `mps2-an386`
+    in CI (`400` normal warmup/calibrate windows + severe fault detection, zero HardFaults; strictly
+    labeled Level 2.5 functional emulation — Level 3 silicon timing remains `PENDING`).
+
 ### Fixed
+- **True All-Zero `.bss` Placement (`-14.40 KB` Flash ROM Saved):** Made `GaugeTriadEngineF32::zeroed()`
+  and `AutoCalBufF32::zeroed()` truly all-zero (`0` / `0.0`), moving `STATIC_ENGINE` (`14,744 B`) out
+  of `.data` into `.bss` and cutting linked ARM Cortex-M4F `.elf` Flash from `38,368 B (37.47 KB)`
+  to `23,624 B (23.07 KB)` (`-38.4%`) while `init()` still sets all runtime defaults identically.
 - **Embedded `#![no_std]` `#[panic_handler]` Hygiene:** Removed the unconditional
   `#[cfg(not(feature = "std"))] #[panic_handler]` from the library crate and gated it behind an
   explicit opt-in `panic-handler` Cargo feature (disabled by default). Bare-metal firmware
