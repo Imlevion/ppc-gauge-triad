@@ -1,4 +1,6 @@
 # PPC-Gauge-Triad v0.7.0 (`ppc_gauge_triad_rs`)
+<a href="https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml"><img src="https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License"></a>
 
 Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) streaming anomaly engine with an on-chip Zero-Touch Auto-Warmup state machine (`AutoCalBufF32`: `Warmup -> Calibrate -> Monitor`) for multi-channel telemetry and embedded physical sensors ($X_t \in \mathbb{R}^{w \times d}$, default $w=8, d=4$).
 
