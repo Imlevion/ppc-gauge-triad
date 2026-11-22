@@ -1,6 +1,6 @@
 [package]
 name = "ppc-m4f-eval"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 publish = false
 description = "Turnkey bare-metal ARM Cortex-M4F (thumbv7em-none-eabihf) Level 2.5 ELF/QEMU & Level 3 DWT evaluation firmware for ppc_gauge_triad_rs"

@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! # `ppc_gauge_triad_rs` v0.7.0 — Deterministic `#![no_std]` Streaming Anomaly Engine
+//! # `ppc_gauge_triad_rs` v0.7.1 — Deterministic `#![no_std]` Streaming Anomaly Engine
 //!
 //! **PPC-Gauge-Triad** is a deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion
 //! `f32` streaming anomaly detection engine for multi-channel telemetry and embedded physical

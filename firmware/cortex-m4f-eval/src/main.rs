@@ -1,5 +1,5 @@
 //! Turnkey Bare-Metal ARM Cortex-M4F (`thumbv7em-none-eabihf`) Evaluation Firmware
-//! for `ppc_gauge_triad_rs` v0.7.0 (`#![no_std]`, `0 B` heap, `0` matrix inversions).
+//! for `ppc_gauge_triad_rs` v0.7.1 (`#![no_std]`, `0 B` heap, `0` matrix inversions).
 //!
 //! ## Verification Scope (`AGENTS.md` Rule 4)
 //! - **Level 2.5 (No Physical Hardware Required):**
@@ -244,7 +244,7 @@ fn main() -> ! {
             && report.fault_alarm_combined == 1
             && report.all_finite == 1;
 
-        let _ = hprintln!("=== PPC-Gauge-Triad v0.7.0 — Level 2.5 ARM Cortex-M4F QEMU Proof ===");
+        let _ = hprintln!("=== PPC-Gauge-Triad v0.7.1 — Level 2.5 ARM Cortex-M4F QEMU Proof ===");
         let _ = hprintln!("Target                  : thumbv7em-none-eabihf (mps2-an386, FPU enabled)");
         let _ = hprintln!("Core struct (.bss)      : {} B", report.core_struct_bytes);
         let _ = hprintln!("AutoCalEngineF32 (.bss) : {} B (< 16 KB)", report.autocal_engine_bytes);

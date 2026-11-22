@@ -356,7 +356,7 @@ def main() -> int:
     plot_fig3_dual_gate_far(args.out_dir)
 
     provenance = {
-        "crate_version": "0.7.0",
+        "crate_version": "0.7.1",
         "core_sram_bytes": int(lib.ppc_triad_engine_bytes()),
         "autocal_sram_bytes": int(lib.ppc_autocal_engine_bytes()),
         "servers_8": srv_res,
