@@ -5,6 +5,25 @@ All notable changes to `ppc_gauge_triad_rs` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Embedded `#![no_std]` `#[panic_handler]` Hygiene:** Removed the unconditional
+  `#[cfg(not(feature = "std"))] #[panic_handler]` from the library crate and gated it behind an
+  explicit opt-in `panic-handler` Cargo feature (disabled by default). Bare-metal firmware
+  binaries depending on `ppc_gauge_triad_rs` with `default-features = false` can now supply
+  their own `#[panic_handler]` (e.g., `panic-halt`, `panic-probe`) without duplicate
+  `panic_impl` linker errors; verified in CI via `examples/level3_cortex_m4f_eval_template.rs`
+  on `thumbv7em-none-eabihf`.
+
+### Documentation & CI
+- Synced `AGENTS.md` to v0.7.0 identity, completed milestones, and embedded memory accounting rules.
+- Separated automated GitHub CI verification scope from locally reproduced offline SMD/PSM
+  research benchmarks in `README.md`.
+- Explicitly distinguished compile-time engine static struct SRAM (`< 16 KB`) from total final
+  firmware RAM (stack incl. `1,024 B` calibration sort scratch, interrupts, DMA/sensor buffers,
+  and runtime overhead) across `README.md`, `src/lib.rs`, `AGENTS.md`, `examples/`, and `paper/`.
+
 ## [0.7.0] - 2026-11-22
 
 ### Added

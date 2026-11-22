@@ -94,7 +94,7 @@ In v0.6.1, split-conformal thresholds and $\log(1+\cdot)$-MAD channel normalizer
   \item \textbf{\texttt{Monitor}:} Scores each window with locked thresholds, computes $s_{\text{comb}} = \sum_{c} \max\bigl(0, (\ln(1+s_c)-\text{med}_c)/\text{mad}_c\bigr)$, and outputs dual-stage alarms directly on chip.
 \end{enumerate}
 
-Table~\ref{tab:sram} summarizes the exact compile-time verified static memory footprint (\texttt{const \_: () = assert!(size\_of::<AutoCalEngineF32>() < 16 * 1024)}).
+Table~\ref{tab:sram} summarizes the exact compile-time verified static struct memory footprint (\texttt{const \_: () = assert!(size\_of::<AutoCalEngineF32>() < 16 * 1024)}). Note that this compile-time bound covers only the engine's static \texttt{.bss} structs: complete embedded firmware deployments must additionally budget call stack (including a 1,024\,B temporary scratch array during \texttt{finalize\_calibration()}), interrupt frames, sensor/DMA buffers, a firmware-supplied \texttt{\#[panic\_handler]}, and BSP/RTOS runtime overhead.
 
 \begin{table}[t]
 \centering
