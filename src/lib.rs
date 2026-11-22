@@ -312,7 +312,8 @@ pub struct GaugeTriadEngineF32 {
 }
 
 impl GaugeTriadEngineF32 {
-    /// Const zero-initializer for safe static `.bss` placement on bare-metal MCUs.
+    /// Const all-zero initializer guaranteeing true `.bss` placement (`0 B` Flash `.data` image)
+    /// on bare-metal MCUs. Call [`GaugeTriadEngineF32::init`] before processing windows.
     pub const fn zeroed() -> Self {
         Self {
             w: 0,
@@ -325,9 +326,9 @@ impl GaugeTriadEngineF32 {
             e_alpha: 0.0,
             dc_alpha: 0.0,
             e_ema: 0.0,
-            e_var: 0.05,
+            e_var: 0.0,
             dc_ema: [0.0; MAX_D],
-            dc_var: [0.05; MAX_D],
+            dc_var: [0.0; MAX_D],
             prev_dc: [0.0; MAX_D],
             e_init: 0,
             streak: 0,
@@ -781,32 +782,33 @@ pub struct AutoCalBufF32 {
 }
 
 impl AutoCalBufF32 {
-    /// Const zero-initializer for static `.bss` placement.
+    /// Const all-zero initializer guaranteeing true `.bss` placement (`0 B` Flash `.data` image).
+    /// Call [`AutoCalBufF32::init`] before calling [`AutoCalBufF32::step`].
     pub const fn zeroed() -> Self {
         Self {
-            state: AutoCalState::Warmup as u8,
-            adapt_env: 1,
+            state: 0,
+            adapt_env: 0,
             dc_relock: 0,
-            use_dual: 1,
+            use_dual: 0,
             comb_alarm_streak: 0,
             _pad0: [0; 3],
-            n_warmup: 75,
-            n_cal: 25,
+            n_warmup: 0,
+            n_cal: 0,
             warmup_count: 0,
             cal_count: 0,
-            alpha: 0.05,
-            sev_mult: 2.5,
-            huber_clip: 1.5,
-            thr_shape: 1e20,
-            thr_energy: 10.0,
-            thr_level: 10.0,
-            thr_combined: 1e20,
+            alpha: 0.0,
+            sev_mult: 0.0,
+            huber_clip: 0.0,
+            thr_shape: 0.0,
+            thr_energy: 0.0,
+            thr_level: 0.0,
+            thr_combined: 0.0,
             sh_med: 0.0,
-            sh_mad: 0.1,
+            sh_mad: 0.0,
             en_med: 0.0,
-            en_mad: 0.1,
+            en_mad: 0.0,
             lv_med: 0.0,
-            lv_mad: 0.1,
+            lv_mad: 0.0,
             cal_sh: [0.0; MAX_CAL],
             cal_en: [0.0; MAX_CAL],
             cal_lv: [0.0; MAX_CAL],
