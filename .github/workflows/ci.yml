@@ -27,14 +27,17 @@ jobs:
       - name: Run Rust Level 1 tests (dev)
         run: cargo test --verbose
 
-      - name: Run full Rust Level 1 suite incl. 1M-window L1.9 (release)
+      - name: Run full Rust Level 1 & v0.7 AutoCal suite incl. 1M-window L1.9 (release)
         run: cargo test --release -- --include-ignored
+
+      - name: Verify Criterion benchmark compilation
+        run: cargo bench --no-run
 
       - name: Build release cdylib
         run: cargo build --release
 
       - name: Verify #![no_std] release check
-        run: cargo check --release --no-default-features
+        run: cargo check --release --no-default-features --lib
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -73,7 +76,7 @@ jobs:
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
       - name: "Target 2/5: Linux x86-64 #![no_std]"
-        run: cargo check --release --no-default-features --target x86_64-unknown-linux-gnu
+        run: cargo check --release --no-default-features --lib --target x86_64-unknown-linux-gnu
 
       - name: "Target 3/5: ARM Cortex-M4F MCU (thumbv7em-none-eabihf, #![no_std])"
         run: cargo rustc --release --no-default-features --target thumbv7em-none-eabihf --lib --crate-type rlib

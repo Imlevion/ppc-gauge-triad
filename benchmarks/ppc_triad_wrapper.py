@@ -164,6 +164,40 @@ def load_rust_lib(repo_root: Path = REPO_ROOT, rebuild: bool = False) -> ctypes.
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_uint8),
     ]
+    lib.ppc_autocal_buf_bytes.restype = ctypes.c_size_t
+    lib.ppc_autocal_engine_bytes.restype = ctypes.c_size_t
+    lib.ppc_autocal_state.argtypes = [ctypes.c_void_p]
+    lib.ppc_autocal_state.restype = ctypes.c_uint8
+    lib.ppc_autocal_init.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_float,
+        ctypes.c_float,
+        ctypes.c_float,
+        ctypes.c_float,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_uint16,
+        ctypes.c_uint16,
+        ctypes.c_float,
+        ctypes.c_uint8,
+        ctypes.c_float,
+        ctypes.c_uint8,
+        ctypes.c_float,
+        ctypes.c_uint8,
+    ]
+    lib.ppc_autocal_run_stream.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_uint8),
+    ]
     _CACHED_LIB = lib
     return lib
 
@@ -245,6 +279,95 @@ class RustTriadV061:
             al.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
         )
         return sh.astype(np.float64), en.astype(np.float64), lv.astype(np.float64), al.astype(bool)
+
+
+class RustAutoCalV07:
+    """Thin ctypes wrapper around v0.7 on-chip `#![no_std]` `AutoCalEngineF32`.
+
+    Executes the entire `Warmup -> Calibrate -> Monitor` state machine directly
+    inside Rust (`~14.4 KB` static SRAM, `0 B` heap) with zero external Python
+    threshold or MAD post-processing.
+    """
+
+    def __init__(
+        self,
+        w: int = 8,
+        d: int = 4,
+        k_max: int = 3,
+        lam0: float = 5e-3,
+        alpha_min: float = 0.01,
+        e_alpha: float = 0.008,
+        dc_alpha: float = 0.004,
+        n_warmup: int = 300,
+        n_cal: int = 100,
+        alpha: float = 0.05,
+        adapt_env: bool = True,
+        sev_mult: float = 2.5,
+        dc_relock: int = 0,
+        huber_clip: float = 1.5,
+        use_dual: bool = True,
+        lib: Optional[ctypes.CDLL] = None,
+    ) -> None:
+        self.lib = lib if lib is not None else load_rust_lib()
+        self.w = w
+        self.d = d
+        self.sz = int(self.lib.ppc_autocal_engine_bytes())
+        self.buf = ctypes.create_string_buffer(self.sz)
+        self.B = make_dct_f32(w)
+        self.lib.ppc_autocal_init(
+            ctypes.byref(self.buf),
+            w,
+            d,
+            k_max,
+            ctypes.c_float(lam0),
+            ctypes.c_float(alpha_min),
+            ctypes.c_float(e_alpha),
+            ctypes.c_float(dc_alpha),
+            self.B.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            int(n_warmup),
+            int(n_cal),
+            ctypes.c_float(alpha),
+            1 if adapt_env else 0,
+            ctypes.c_float(sev_mult),
+            int(dc_relock),
+            ctypes.c_float(huber_clip),
+            1 if use_dual else 0,
+        )
+
+    @property
+    def state(self) -> int:
+        return int(self.lib.ppc_autocal_state(ctypes.byref(self.buf)))
+
+    def run(
+        self, x_wins: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        xc = np.ascontiguousarray(x_wins, dtype=np.float32)
+        n = len(xc)
+        st = np.empty(n, dtype=np.uint8)
+        sh = np.empty(n, dtype=np.float32)
+        en = np.empty(n, dtype=np.float32)
+        lv = np.empty(n, dtype=np.float32)
+        cb = np.empty(n, dtype=np.float32)
+        al = np.empty(n, dtype=np.uint8)
+        self.lib.ppc_autocal_run_stream(
+            ctypes.byref(self.buf),
+            xc.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            n,
+            st.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+            sh.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            en.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            lv.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            cb.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            al.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+        )
+        return (
+            st,
+            sh.astype(np.float64),
+            en.astype(np.float64),
+            lv.astype(np.float64),
+            cb.astype(np.float64),
+            al.astype(bool),
+        )
 
 
 # ---------------------------------------------------------------------------

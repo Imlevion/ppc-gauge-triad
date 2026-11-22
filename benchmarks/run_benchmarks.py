@@ -39,6 +39,7 @@ from benchmarks.ppc_triad_wrapper import (
     PRESET_V05_BASELINE,
     NumpyTriadRefV061,
     OperationalPreset,
+    RustAutoCalV07,
     RustTriadV061,
     compute_auroc,
     conformal_threshold,
@@ -297,7 +298,65 @@ def run_warmup_curve(
     print("-" * (18 + 14 * len(warm_counts)))
     mean_row = {f"{n}w": float(np.mean(cols[n])) for n in warm_counts}
     print(f"{'MEAN AUROC':<18}" + "".join(f"{mean_row[f'{n}w']:13.1f}%" for n in warm_counts))
-    return {"preset": preset.name, "per_target": per_target, "mean": mean_row}
+
+    # v0.7 On-Chip AutoCalEngineF32 verification (Warmup -> Calibrate -> Monitor inside #![no_std] Rust)
+    print(
+        f"\n=== TEST 3B (v0.7 ON-CHIP AutoCalEngineF32): ZERO-TOUCH AUTO-WARMUP (100/200/400w) ==="
+    )
+    onchip_counts = [100, 200, 400]
+    print(
+        f"{'Unseen Target':<18}"
+        + "".join(f"{f'OnChip {n}w':>14}" for n in onchip_counts)
+    )
+    print("-" * (18 + 14 * len(onchip_counts)))
+    oc_cols: Dict[int, List[float]] = {n: [] for n in onchip_counts}
+    oc_per_target: Dict[str, Dict[str, float]] = {}
+    for tgt in targets:
+        tr_t, te_t, yl_t = cache_raw[tgt]
+        row = f"{tgt:<18}"
+        oc_per_target[tgt] = {}
+        for nw in onchip_counts:
+            wtr_t, wte_t, yte_t, _ = to_windows_v6(
+                tr_t[: nw * 8], te_t, yl_t, max_tr_win=nw, use_pca_resid=True
+            )
+            n_warm = int(len(wtr_t) * 0.75)
+            n_cal = len(wtr_t) - n_warm
+            stream = np.concatenate([wtr_t, wte_t], axis=0)
+            ac = RustAutoCalV07(
+                w=8,
+                d=4,
+                k_max=3,
+                lam0=5e-3,
+                alpha_min=0.01,
+                e_alpha=preset.e_alpha,
+                dc_alpha=preset.dc_alpha,
+                n_warmup=n_warm,
+                n_cal=n_cal,
+                alpha=0.05,
+                adapt_env=preset.adapt_env,
+                sev_mult=preset.sev_mult,
+                dc_relock=preset.dc_relock,
+                huber_clip=preset.huber_clip,
+                use_dual=preset.use_dual,
+            )
+            states, _, _, _, s_comb, _ = ac.run(stream)
+            assert int(states[0]) == 0 and int(states[n_warm]) == 1 and int(states[len(wtr_t)]) == 2
+            au = compute_auroc(yte_t, s_comb[len(wtr_t) :]) * 100.0
+            oc_cols[nw].append(au)
+            oc_per_target[tgt][f"{nw}w"] = float(au)
+            row += f"{au:13.1f}%"
+        print(row)
+    print("-" * (18 + 14 * len(onchip_counts)))
+    oc_mean = {f"{n}w": float(np.mean(oc_cols[n])) for n in onchip_counts}
+    print(f"{'MEAN AUROC':<18}" + "".join(f"{oc_mean[f'{n}w']:13.1f}%" for n in onchip_counts))
+
+    return {
+        "preset": preset.name,
+        "per_target": per_target,
+        "mean": mean_row,
+        "v07_onchip_per_target": oc_per_target,
+        "v07_onchip_mean": oc_mean,
+    }
 
 
 def run_host_latency_benchmark(n_batch: int = 200, n_repeats: int = 500) -> Dict[str, Any]:
@@ -371,14 +430,17 @@ def main() -> int:
 
     lib = load_rust_lib(rebuild=args.rebuild)
     sram_bytes = int(lib.ppc_triad_engine_bytes())
+    autocal_sram_bytes = int(lib.ppc_autocal_engine_bytes())
     print(
-        f"PPC-Gauge-Triad v0.6.1 native library loaded | "
-        f"Struct SRAM = {sram_bytes} B ({sram_bytes / 1024.0:.2f} KB)"
+        f"PPC-Gauge-Triad v0.7.0 native library loaded | "
+        f"Core SRAM = {sram_bytes} B ({sram_bytes / 1024.0:.2f} KB) | "
+        f"AutoCalEngine SRAM = {autocal_sram_bytes} B ({autocal_sram_bytes / 1024.0:.2f} KB)"
     )
 
     report: Dict[str, Any] = {
-        "crate_version": "0.6.1",
+        "crate_version": "0.7.0",
         "sram_bytes": sram_bytes,
+        "autocal_sram_bytes": autocal_sram_bytes,
         "platform": platform.platform(),
         "python": platform.python_version(),
     }

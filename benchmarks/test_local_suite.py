@@ -25,8 +25,12 @@ from benchmarks.ppc_triad_wrapper import (
     PRESET_LOW_FAR,
     PRESET_THERMAL_CHIP,
     NumpyTriadRefV061,
+    RustAutoCalV07,
     RustTriadV061,
+    conformal_threshold,
+    dual_gate_scalar,
     load_rust_lib,
+    triad_norm_score,
 )
 
 
@@ -37,8 +41,44 @@ class TestPPCGaugeLocalSuite(unittest.TestCase):
 
     def test_embedded_sram_under_16kb(self) -> None:
         sram = int(self.lib.ppc_triad_engine_bytes())
+        autocal_sram = int(self.lib.ppc_autocal_engine_bytes())
         self.assertGreater(sram, 0)
-        self.assertLess(sram, 16 * 1024, f"Struct SRAM {sram} B exceeds 16 KB limit")
+        self.assertLess(sram, 16 * 1024, f"Core struct SRAM {sram} B exceeds 16 KB limit")
+        self.assertLess(autocal_sram, 16 * 1024, f"AutoCalEngineF32 SRAM {autocal_sram} B exceeds 16 KB limit")
+
+    def test_v07_autocal_on_chip_state_machine_and_parity(self) -> None:
+        rng = np.random.default_rng(707)
+        n_warm, n_cal, n_mon = 150, 50, 80
+        stream = rng.standard_normal((n_warm + n_cal + n_mon, 8, 4)).astype(np.float32)
+
+        # v0.7 on-chip AutoCalEngineF32
+        ac = RustAutoCalV07(
+            8, 4, k_max=3, lam0=5e-3, alpha_min=0.01, e_alpha=0.008, dc_alpha=0.004,
+            n_warmup=n_warm, n_cal=n_cal, alpha=0.05, adapt_env=True, sev_mult=2.5,
+            dc_relock=0, huber_clip=1.5, use_dual=True,
+        )
+        self.assertEqual(ac.state, 0)
+        st, _, _, _, cb, al = ac.run(stream)
+        self.assertEqual(ac.state, 2)
+        self.assertTrue(np.all(st[:n_warm] == 0))
+        self.assertTrue(np.all(st[n_warm : n_warm + n_cal] == 1))
+        self.assertTrue(np.all(st[n_warm + n_cal :] == 2))
+        self.assertFalse(np.any(al[: n_warm + n_cal]))
+
+        # Compare against manual v0.6.1 + Python split-conformal & triad_norm_score
+        man = RustTriadV061(8, 4, k_max=3, lam0=5e-3, alpha_min=0.01, e_alpha=0.008, dc_alpha=0.004)
+        man.run(stream[:n_warm], learn=True)
+        shc, enc, lvc, _ = man.run(stream[n_warm : n_warm + n_cal], learn=False)
+        thr_sh = conformal_threshold(shc, 0.05)
+        thr_sc = conformal_threshold(triad_norm_score(shc, enc, lvc, shc, enc, lvc), 0.05)
+        sht, ent, lvt, _ = man.run(
+            stream[n_warm + n_cal :], learn=False, shape_gate=thr_sh, adapt_env=True, huber_clip=1.5
+        )
+        ref_sc = triad_norm_score(shc, enc, lvc, sht, ent, lvt)
+        ref_al = dual_gate_scalar(ref_sc, thr_sc, 2.5)
+
+        self.assertLess(float(np.max(np.abs(cb[n_warm + n_cal :] - ref_sc))), 1e-4)
+        self.assertTrue(np.array_equal(al[n_warm + n_cal :], ref_al))
 
     def test_l1_8_python_numpy_vs_rust_cdylib_parity(self) -> None:
         rng = np.random.default_rng(1108)

@@ -1,8 +1,8 @@
 [package]
 name = "ppc_gauge_triad_rs"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
-description = "PPC-Gauge-Triad v0.6.1: #![no_std] f32 Zero-Heap Anomaly Engine with Huber-Clamped EMA, Stable-Plateau DC Re-Lock & Dual-Stage Alarm Gate"
+description = "PPC-Gauge-Triad v0.7.0: #![no_std] f32 Zero-Heap Streaming Anomaly Engine with On-Chip AutoCalBufF32 State Machine, Huber-Clamped EMA, Stable-Plateau DC Re-Lock & Dual-Stage Alarm Gate"
 
 [lib]
 name = "ppc_gauge_triad_rs"
@@ -11,6 +11,19 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["std"]
 std = []
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[target.'cfg(all(windows, target_env = "gnu"))'.dev-dependencies]
+# Self-contained rustup x86_64-pc-windows-gnu lacks external dlltool.exe in PATH required by windows-sys >=0.60 raw-dylib
+winapi-util = ">=0.1.6, <=0.1.9"
+is-terminal = ">=0.4.12, <=0.4.16"
+
+[[bench]]
+name = "triad_bench"
+harness = false
+required-features = ["std"]
 
 [profile.release]
 opt-level = 3
