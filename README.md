@@ -1,11 +1,11 @@
-# PPC-Gauge-Triad v0.6.1 (`ppc_gauge_triad_rs`)
+# PPC-Gauge-Triad v0.7.0 (`ppc_gauge_triad_rs`)
 
-Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) streaming anomaly engine for multi-channel telemetry and embedded physical sensors ($X_t \in \mathbb{R}^{w \times d}$, default $w=8, d=4$).
+Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) streaming anomaly engine with an on-chip Zero-Touch Auto-Warmup state machine (`AutoCalBufF32`: `Warmup -> Calibrate -> Monitor`) for multi-channel telemetry and embedded physical sensors ($X_t \in \mathbb{R}^{w \times d}$, default $w=8, d=4$).
 
 ## Validation Status
 
-- **Level 1 (Algorithmic Invariants):** **9 / 9 PASSED** — verified via local `cargo test` (`tests/level1_invariants.rs`) and Python L1.8 parity suite (`benchmarks/test_local_suite.py`).
-- **Level 2 (Software & Real-World Benchmarks):** **VERIFIED** — 5/5 cross-compile targets, 8 real servers (SMD + PSM), OpenML physical/trajectory benchmarks, 50,000-window 5-seed streaming, cross-device auto-warmup curve (`~11.4 KB` static struct SRAM, `0 B` heap, `0` matrix inversions).
+- **Level 1 (Algorithmic Invariants):** **9 / 9 PASSED** — verified via local `cargo test` (`tests/level1_invariants.rs`, `tests/autocal_v07.rs`) and Python L1.8 parity suite (`benchmarks/test_local_suite.py`).
+- **Level 2 (Software & Real-World Benchmarks):** **VERIFIED** — 5/5 cross-compile targets, 8 real servers (SMD + PSM), OpenML physical/trajectory benchmarks, 50,000-window 5-seed streaming, cross-device auto-warmup curve (including v0.7 on-chip `AutoCalEngineF32`: `~14.4 KB` total static SRAM `< 16 KB`, `0 B` heap, `0` matrix inversions).
 - **Level 3 (Physical Hardware Verification):** **PENDING** — physical MCU/FPGA silicon cycle counts, `.map` flash/RAM measurements, and mW power profiling are not claimed until measured directly on hardware (`probe-rs` / DWT / power profiler).
 
 See [`VALIDATION_REPORT_v061.md`](VALIDATION_REPORT_v061.md) for the complete evidence table and [`AGENTS.md`](AGENTS.md) for strict engineering rules and roadmap milestones.
@@ -20,6 +20,7 @@ See [`VALIDATION_REPORT_v061.md`](VALIDATION_REPORT_v061.md) for the complete ev
    - **Server Telemetry Mode (`huber_clip > 0`):** Huber-clamped EMA tracks slow normal drift without swallowing sustained 50–300 window incidents.
    - **Thermal / Sensor Chip Mode (`huber_clip = 0, dc_relock = 6`):** Fast ramp EMA + 3-window energy hysteresis + stable-plateau DC re-lock.
 4. **Dual-Stage Alarm Gate (`step_v61`):** Immediate trip on severe faults (`> 2.5x thr`) OR 2-consecutive-window confirmation.
+5. **On-Chip Zero-Touch Auto-Warmup (`AutoCalBufF32` / `AutoCalEngineF32` — v0.7):** Fixed-size `#![no_std]` state machine (`Warmup -> Calibrate -> Monitor`, `MAX_CAL = 256`) that computes split-conformal thresholds and log1p-MAD triad normalizers directly on chip (`~14.4 KB` combined SRAM, enforced `< 16 KB` at compile time, `0 B` heap).
 
 ### Locked Operational Presets (Zero Post-Hoc Tuning)
 
@@ -44,8 +45,12 @@ cargo test
 # Full Level 1 suite including 1,000,000-window live online stability (L1.9, ~3–6s)
 cargo test --release -- --include-ignored
 
-# Verify #![no_std] release compilation
-cargo check --release --no-default-features
+# Verify #![no_std] release compilation & ARM Cortex-M4F target
+cargo check --release --no-default-features --lib
+cargo rustc --release --no-default-features --target thumbv7em-none-eabihf --lib --crate-type rlib
+
+# Run Criterion host CPU micro-benchmarks
+cargo bench --bench triad_bench
 ```
 
 ### 2. Local Python Benchmark Harness with SMD/PSM Disk Cache
@@ -78,8 +83,11 @@ python benchmarks/run_benchmarks.py --all --offline
 
 ```text
 ├── Cargo.toml                         # Rust crate manifest (rlib + cdylib, #![no_std])
-├── src/lib.rs                         # Core GaugeTriadEngineF32 engine & C FFI exports
-├── tests/level1_invariants.rs         # Local Rust Level 1 invariant & embedded constraint tests
+├── src/lib.rs                         # Core GaugeTriadEngineF32, v0.7 AutoCalBufF32/AutoCalEngineF32 & C FFI
+├── tests/
+│   ├── level1_invariants.rs           # Local Rust Level 1 invariant (L1.1–L1.9) & embedded constraint tests
+│   └── autocal_v07.rs                 # v0.7 on-chip AutoCalBufF32 state machine, SRAM & FFI parity tests
+├── benches/triad_bench.rs             # Criterion host CPU micro-benchmarks
 ├── benchmarks/
 │   ├── ppc_triad_wrapper.py           # Cross-platform ctypes wrapper + pure-NumPy L1.8 reference
 │   ├── dataset_cache.py               # Atomic local .npz cache for SMD & PSM (no pandas)

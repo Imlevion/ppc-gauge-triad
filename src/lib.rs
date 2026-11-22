@@ -1,13 +1,19 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! PPC-Gauge-Triad v0.6.1 (`#![no_std]` f32):
+//! PPC-Gauge-Triad v0.7.0 (`#![no_std]` f32):
 //! Orthogonal 3-channel gauge decomposition for streaming telemetry & physical sensors:
 //!   1. `s_shape`  : Exact Sim+(d) Givens-QR canonical shadow (det=+1).
 //!   2. `s_energy` : Relative log-fluctuation energy (Huber-clamped EMA for server drift OR 3-window plateau hysteresis for thermal chips).
 //!   3. `s_level`  : Per-channel DC mean drift (Huber-clamped EMA to track drift WITHOUT swallowing sustained anomalies, OR stable-plateau re-lock for abrupt chip steps).
 //!   4. Dual-Stage Alarm Gate (`step_v61`): Immediate trip (`> sev_mult * thr`) OR 2-consecutive-window confirmation.
+//!   5. On-Chip Zero-Touch Auto-Warmup (`AutoCalBufF32` / `AutoCalEngineF32` — v0.7):
+//!      Fixed-size `#![no_std]` state machine (`Warmup -> Calibrate -> Monitor`) computing split-conformal
+//!      thresholds and log1p-MAD triad normalization directly on chip.
 //!
-//! Hardware profile: ~11.4 KB static struct SRAM, 0 B heap, 0 matrix inversions.
+//! Hardware profile:
+//!   - Core `GaugeTriadEngineF32`: ~11.4 KB static struct SRAM
+//!   - Combined `AutoCalEngineF32` (Engine + `AutoCalBufF32`): ~14.4 KB static struct SRAM (< 16 KB enforced at compile time)
+//!   - Heap allocation: 0 B | Matrix inversions: 0
 
 #[cfg(not(feature = "std"))]
 #[panic_handler]
@@ -15,10 +21,11 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-const MAX_W: usize = 8;
-const MAX_D: usize = 4;
-const MAX_M: usize = 26;
-const MAX_K: usize = 4;
+pub const MAX_W: usize = 8;
+pub const MAX_D: usize = 4;
+pub const MAX_M: usize = 26;
+pub const MAX_K: usize = 4;
+pub const MAX_CAL: usize = 256;
 
 #[inline(always)]
 fn sqrt_f32(x: f32) -> f32 {
@@ -55,6 +62,102 @@ fn clamp_f32(x: f32, lo: f32, hi: f32) -> f32 {
     if x < lo { lo } else if x > hi { hi } else { x }
 }
 
+#[inline(always)]
+fn abs_f32(x: f32) -> f32 {
+    if x < 0.0 { -x } else { x }
+}
+
+#[inline(always)]
+fn sanitize_nonneg_f32(x: f32) -> f32 {
+    if x > 0.0 && x.is_finite() { x } else { 0.0 }
+}
+
+/// Deterministic `#![no_std]` in-place Shell sort (Knuth gaps, zero heap, zero recursion).
+fn shell_sort_f32(arr: &mut [f32]) {
+    let n = arr.len();
+    if n <= 1 {
+        return;
+    }
+    let mut gap = 1usize;
+    while gap < n / 3 {
+        gap = gap * 3 + 1;
+    }
+    while gap >= 1 {
+        for i in gap..n {
+            let tmp = arr[i];
+            let mut j = i;
+            while j >= gap && arr[j - gap] > tmp {
+                arr[j] = arr[j - gap];
+                j -= gap;
+            }
+            arr[j] = tmp;
+        }
+        gap /= 3;
+    }
+}
+
+#[inline]
+fn median_sorted(sorted: &[f32]) -> f32 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0.0;
+    }
+    if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+    }
+}
+
+#[inline]
+fn ceil_pos_f64_to_usize(x: f64) -> usize {
+    if x <= 0.0 {
+        return 0;
+    }
+    let t = x as usize;
+    if (t as f64) < x - 1e-12 {
+        t + 1
+    } else {
+        t
+    }
+}
+
+#[inline]
+fn conformal_quantile_sorted(sorted: &[f32], alpha: f32) -> f32 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let a = clamp_f32(alpha, 1e-6, 0.999999) as f64;
+    let c = ceil_pos_f64_to_usize((1.0 - a) * ((n + 1) as f64));
+    let idx = if c == 0 {
+        0
+    } else if c - 1 >= n {
+        n - 1
+    } else {
+        c - 1
+    };
+    sorted[idx]
+}
+
+fn fit_log1p_mad(raw: &[f32], scratch: &mut [f32; MAX_CAL]) -> (f32, f32) {
+    let n = raw.len();
+    if n == 0 {
+        return (0.0, 0.1);
+    }
+    for i in 0..n {
+        scratch[i] = ln_f32(1.0 + sanitize_nonneg_f32(raw[i]));
+    }
+    shell_sort_f32(&mut scratch[..n]);
+    let med = median_sorted(&scratch[..n]);
+    for i in 0..n {
+        scratch[i] = abs_f32(scratch[i] - med);
+    }
+    shell_sort_f32(&mut scratch[..n]);
+    let mad = median_sorted(&scratch[..n]) * 1.4826 + 0.1;
+    (med, mad)
+}
+
 #[repr(C)]
 pub struct GaugeTriadEngineF32 {
     pub w: usize,
@@ -84,6 +187,36 @@ pub struct GaugeTriadEngineF32 {
 }
 
 impl GaugeTriadEngineF32 {
+    /// Const zero-initializer for safe static `.bss` placement on bare-metal MCUs.
+    pub const fn zeroed() -> Self {
+        Self {
+            w: 0,
+            d: 0,
+            m: 0,
+            k_max: 0,
+            k_active: 0,
+            lam0: 0.0,
+            alpha_min: 0.0,
+            e_alpha: 0.0,
+            dc_alpha: 0.0,
+            e_ema: 0.0,
+            e_var: 0.05,
+            dc_ema: [0.0; MAX_D],
+            dc_var: [0.05; MAX_D],
+            prev_dc: [0.0; MAX_D],
+            e_init: 0,
+            streak: 0,
+            dc_streak: 0,
+            sh_alarm_streak: 0,
+            en_alarm_streak: 0,
+            lv_alarm_streak: 0,
+            b_dct: [0.0; MAX_W * MAX_W],
+            means: [[0.0; MAX_M]; MAX_K],
+            precs: [[0.0; MAX_M * MAX_M]; MAX_K],
+            counts: [0; MAX_K],
+        }
+    }
+
     pub fn init(
         &mut self, w: usize, d: usize, k_max: usize,
         lam0: f32, alpha_min: f32, e_alpha: f32, dc_alpha: f32, b_dct: &[f32],
@@ -392,6 +525,358 @@ impl GaugeTriadEngineF32 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v0.7 On-Chip Zero-Touch Auto-Warmup State Machine (`AutoCalBufF32`)
+// ---------------------------------------------------------------------------
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AutoCalState {
+    Warmup = 0,
+    Calibrate = 1,
+    Monitor = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct AutoCalStepResult {
+    pub state: u8,
+    pub alarm_channel: u8,
+    pub alarm_combined: u8,
+    pub _pad: u8,
+    pub s_shape: f32,
+    pub s_energy: f32,
+    pub s_level: f32,
+    pub s_combined: f32,
+}
+
+/// Fixed-size `#![no_std]` on-chip calibration buffer & state machine (`Warmup -> Calibrate -> Monitor`).
+///
+/// Supports per-device unsupervised auto-warmup (`100–400`+ windows; up to `MAX_CAL = 256` calibration
+/// windows) with `0 B` heap allocation and `~3.07 KB` static SRAM.
+#[repr(C)]
+pub struct AutoCalBufF32 {
+    pub state: u8,
+    pub adapt_env: u8,
+    pub dc_relock: u8,
+    pub use_dual: u8,
+    pub comb_alarm_streak: u8,
+    pub _pad0: [u8; 3],
+    pub n_warmup: u16,
+    pub n_cal: u16,
+    pub warmup_count: u16,
+    pub cal_count: u16,
+    pub alpha: f32,
+    pub sev_mult: f32,
+    pub huber_clip: f32,
+    pub thr_shape: f32,
+    pub thr_energy: f32,
+    pub thr_level: f32,
+    pub thr_combined: f32,
+    pub sh_med: f32,
+    pub sh_mad: f32,
+    pub en_med: f32,
+    pub en_mad: f32,
+    pub lv_med: f32,
+    pub lv_mad: f32,
+    pub cal_sh: [f32; MAX_CAL],
+    pub cal_en: [f32; MAX_CAL],
+    pub cal_lv: [f32; MAX_CAL],
+}
+
+impl AutoCalBufF32 {
+    pub const fn zeroed() -> Self {
+        Self {
+            state: AutoCalState::Warmup as u8,
+            adapt_env: 1,
+            dc_relock: 0,
+            use_dual: 1,
+            comb_alarm_streak: 0,
+            _pad0: [0; 3],
+            n_warmup: 75,
+            n_cal: 25,
+            warmup_count: 0,
+            cal_count: 0,
+            alpha: 0.05,
+            sev_mult: 2.5,
+            huber_clip: 1.5,
+            thr_shape: 1e20,
+            thr_energy: 10.0,
+            thr_level: 10.0,
+            thr_combined: 1e20,
+            sh_med: 0.0,
+            sh_mad: 0.1,
+            en_med: 0.0,
+            en_mad: 0.1,
+            lv_med: 0.0,
+            lv_mad: 0.1,
+            cal_sh: [0.0; MAX_CAL],
+            cal_en: [0.0; MAX_CAL],
+            cal_lv: [0.0; MAX_CAL],
+        }
+    }
+
+    pub fn init(
+        &mut self,
+        n_warmup: u16,
+        n_cal: u16,
+        alpha: f32,
+        adapt_env: u8,
+        sev_mult: f32,
+        dc_relock: u8,
+        huber_clip: f32,
+        use_dual: u8,
+    ) {
+        self.state = AutoCalState::Warmup as u8;
+        self.adapt_env = adapt_env;
+        self.dc_relock = dc_relock;
+        self.use_dual = use_dual;
+        self.comb_alarm_streak = 0;
+        self._pad0 = [0; 3];
+        self.n_warmup = if n_warmup == 0 { 1 } else { n_warmup };
+        self.n_cal = if n_cal == 0 {
+            1
+        } else if (n_cal as usize) > MAX_CAL {
+            MAX_CAL as u16
+        } else {
+            n_cal
+        };
+        self.warmup_count = 0;
+        self.cal_count = 0;
+        self.alpha = clamp_f32(alpha, 1e-4, 0.5);
+        self.sev_mult = if sev_mult > 1.0 { sev_mult } else { 1.0 };
+        self.huber_clip = if huber_clip > 0.0 { huber_clip } else { 0.0 };
+        self.thr_shape = 1e20;
+        self.thr_energy = 10.0;
+        self.thr_level = 10.0;
+        self.thr_combined = 1e20;
+        self.sh_med = 0.0;
+        self.sh_mad = 0.1;
+        self.en_med = 0.0;
+        self.en_mad = 0.1;
+        self.lv_med = 0.0;
+        self.lv_mad = 0.1;
+    }
+
+    #[inline]
+    pub fn state(&self) -> AutoCalState {
+        match self.state {
+            0 => AutoCalState::Warmup,
+            1 => AutoCalState::Calibrate,
+            _ => AutoCalState::Monitor,
+        }
+    }
+
+    #[inline]
+    pub fn combined_score(&self, s_shape: f32, s_energy: f32, s_level: f32) -> f32 {
+        let rz_sh = (ln_f32(1.0 + sanitize_nonneg_f32(s_shape)) - self.sh_med) / self.sh_mad;
+        let rz_en = (ln_f32(1.0 + sanitize_nonneg_f32(s_energy)) - self.en_med) / self.en_mad;
+        let rz_lv = (ln_f32(1.0 + sanitize_nonneg_f32(s_level)) - self.lv_med) / self.lv_mad;
+        let a = if rz_sh > 0.0 { rz_sh } else { 0.0 };
+        let b = if rz_en > 0.0 { rz_en } else { 0.0 };
+        let c = if rz_lv > 0.0 { rz_lv } else { 0.0 };
+        a + b + c
+    }
+
+    fn finalize_calibration(&mut self, engine: &mut GaugeTriadEngineF32) {
+        let n = (self.cal_count as usize).min(MAX_CAL);
+        if n == 0 {
+            self.state = AutoCalState::Monitor as u8;
+            return;
+        }
+        let mut scratch = [0.0f32; MAX_CAL];
+
+        // 1. Per-channel split-conformal thresholds
+        for i in 0..n { scratch[i] = self.cal_sh[i]; }
+        shell_sort_f32(&mut scratch[..n]);
+        self.thr_shape = conformal_quantile_sorted(&scratch[..n], self.alpha);
+
+        for i in 0..n { scratch[i] = self.cal_en[i]; }
+        shell_sort_f32(&mut scratch[..n]);
+        self.thr_energy = conformal_quantile_sorted(&scratch[..n], self.alpha);
+
+        for i in 0..n { scratch[i] = self.cal_lv[i]; }
+        shell_sort_f32(&mut scratch[..n]);
+        self.thr_level = conformal_quantile_sorted(&scratch[..n], self.alpha);
+
+        // 2. Robust log1p-MAD normalizers per channel
+        let (sh_m, sh_d) = fit_log1p_mad(&self.cal_sh[..n], &mut scratch);
+        self.sh_med = sh_m;
+        self.sh_mad = sh_d;
+
+        let (en_m, en_d) = fit_log1p_mad(&self.cal_en[..n], &mut scratch);
+        self.en_med = en_m;
+        self.en_mad = en_d;
+
+        let (lv_m, lv_d) = fit_log1p_mad(&self.cal_lv[..n], &mut scratch);
+        self.lv_med = lv_m;
+        self.lv_mad = lv_d;
+
+        // 3. Split-conformal threshold on the normalized combined triad score
+        for i in 0..n {
+            scratch[i] = self.combined_score(self.cal_sh[i], self.cal_en[i], self.cal_lv[i]);
+        }
+        shell_sort_f32(&mut scratch[..n]);
+        self.thr_combined = conformal_quantile_sorted(&scratch[..n], self.alpha);
+
+        // Reset alarm streaks prior to entering Monitor mode
+        engine.sh_alarm_streak = 0;
+        engine.en_alarm_streak = 0;
+        engine.lv_alarm_streak = 0;
+        self.comb_alarm_streak = 0;
+        self.state = AutoCalState::Monitor as u8;
+    }
+
+    /// Execute one streaming window through the on-chip `Warmup -> Calibrate -> Monitor` state machine.
+    #[inline]
+    pub fn step(&mut self, engine: &mut GaugeTriadEngineF32, x_win: &[f32]) -> AutoCalStepResult {
+        match self.state() {
+            AutoCalState::Warmup => {
+                let (sh, en, lv, _) = engine.step_v61(
+                    x_win, 1, 1e20, 1, 10.0, 10.0, self.sev_mult, 0, 0.0,
+                );
+                self.warmup_count = self.warmup_count.saturating_add(1);
+                if self.warmup_count >= self.n_warmup {
+                    self.state = AutoCalState::Calibrate as u8;
+                }
+                AutoCalStepResult {
+                    state: AutoCalState::Warmup as u8,
+                    alarm_channel: 0,
+                    alarm_combined: 0,
+                    _pad: 0,
+                    s_shape: sh,
+                    s_energy: en,
+                    s_level: lv,
+                    s_combined: 0.0,
+                }
+            }
+            AutoCalState::Calibrate => {
+                let (sh, en, lv, _) = engine.step_v61(
+                    x_win, 0, 1e20, 0, 10.0, 10.0, self.sev_mult, 0, 0.0,
+                );
+                let idx = self.cal_count as usize;
+                if idx < MAX_CAL {
+                    self.cal_sh[idx] = sh;
+                    self.cal_en[idx] = en;
+                    self.cal_lv[idx] = lv;
+                    self.cal_count = self.cal_count.saturating_add(1);
+                }
+                if self.cal_count >= self.n_cal {
+                    self.finalize_calibration(engine);
+                }
+                AutoCalStepResult {
+                    state: AutoCalState::Calibrate as u8,
+                    alarm_channel: 0,
+                    alarm_combined: 0,
+                    _pad: 0,
+                    s_shape: sh,
+                    s_energy: en,
+                    s_level: lv,
+                    s_combined: 0.0,
+                }
+            }
+            AutoCalState::Monitor => {
+                let (sh, en, lv, al_ch) = engine.step_v61(
+                    x_win,
+                    0,
+                    self.thr_shape,
+                    self.adapt_env,
+                    self.thr_energy,
+                    self.thr_level,
+                    self.sev_mult,
+                    self.dc_relock,
+                    self.huber_clip,
+                );
+                let s_comb = self.combined_score(sh, en, lv);
+                self.comb_alarm_streak = if s_comb > self.thr_combined {
+                    self.comb_alarm_streak.saturating_add(1)
+                } else {
+                    0
+                };
+                let al_comb: u8 = if self.use_dual != 0 {
+                    if (s_comb > self.thr_combined * self.sev_mult) || (self.comb_alarm_streak >= 2) {
+                        1
+                    } else {
+                        0
+                    }
+                } else if s_comb > self.thr_combined {
+                    1
+                } else {
+                    0
+                };
+                AutoCalStepResult {
+                    state: AutoCalState::Monitor as u8,
+                    alarm_channel: al_ch,
+                    alarm_combined: al_comb,
+                    _pad: 0,
+                    s_shape: sh,
+                    s_energy: en,
+                    s_level: lv,
+                    s_combined: s_comb,
+                }
+            }
+        }
+    }
+}
+
+/// Complete single-struct Zero-Touch Auto-Warmup Engine (`GaugeTriadEngineF32` + `AutoCalBufF32`).
+/// Total static SRAM is enforced to be `< 16 KB` at compile time on every target.
+#[repr(C)]
+pub struct AutoCalEngineF32 {
+    pub engine: GaugeTriadEngineF32,
+    pub cal: AutoCalBufF32,
+}
+
+impl AutoCalEngineF32 {
+    pub const fn zeroed() -> Self {
+        Self {
+            engine: GaugeTriadEngineF32::zeroed(),
+            cal: AutoCalBufF32::zeroed(),
+        }
+    }
+
+    pub fn init(
+        &mut self,
+        w: usize,
+        d: usize,
+        k_max: usize,
+        lam0: f32,
+        alpha_min: f32,
+        e_alpha: f32,
+        dc_alpha: f32,
+        b_dct: &[f32],
+        n_warmup: u16,
+        n_cal: u16,
+        alpha: f32,
+        adapt_env: u8,
+        sev_mult: f32,
+        dc_relock: u8,
+        huber_clip: f32,
+        use_dual: u8,
+    ) {
+        self.engine.init(w, d, k_max, lam0, alpha_min, e_alpha, dc_alpha, b_dct);
+        self.cal.init(n_warmup, n_cal, alpha, adapt_env, sev_mult, dc_relock, huber_clip, use_dual);
+    }
+
+    #[inline]
+    pub fn step(&mut self, x_win: &[f32]) -> AutoCalStepResult {
+        self.cal.step(&mut self.engine, x_win)
+    }
+
+    #[inline]
+    pub fn state(&self) -> AutoCalState {
+        self.cal.state()
+    }
+}
+
+// Compile-time embedded SRAM guarantees (AGENTS.md Rule 3: strictly < 16 KB)
+const _: () = assert!(core::mem::size_of::<GaugeTriadEngineF32>() < 16 * 1024);
+const _: () = assert!(core::mem::size_of::<AutoCalEngineF32>() < 16 * 1024);
+
+// ---------------------------------------------------------------------------
+// C FFI Exports (v0.6.1 compatible + v0.7 AutoCal)
+// ---------------------------------------------------------------------------
+
 #[no_mangle]
 pub extern "C" fn ppc_triad_engine_bytes() -> usize {
     core::mem::size_of::<GaugeTriadEngineF32>()
@@ -424,5 +909,80 @@ pub unsafe extern "C" fn ppc_triad_run_stream_v61(
         let win = &x_all[i * stride..(i + 1) * stride];
         let (sh, en, lv, al) = e.step_v61(win, learn, shape_gate, adapt_env, imp_thr, lvl_thr, sev_mult, dc_relock, huber_clip);
         sh_s[i] = sh; en_s[i] = en; lv_s[i] = lv; al_s[i] = al;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ppc_autocal_buf_bytes() -> usize {
+    core::mem::size_of::<AutoCalBufF32>()
+}
+
+#[no_mangle]
+pub extern "C" fn ppc_autocal_engine_bytes() -> usize {
+    core::mem::size_of::<AutoCalEngineF32>()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ppc_autocal_init(
+    eng: *mut AutoCalEngineF32,
+    w: usize,
+    d: usize,
+    k_max: usize,
+    lam0: f32,
+    alpha_min: f32,
+    e_alpha: f32,
+    dc_alpha: f32,
+    b_dct: *const f32,
+    n_warmup: u16,
+    n_cal: u16,
+    alpha: f32,
+    adapt_env: u8,
+    sev_mult: f32,
+    dc_relock: u8,
+    huber_clip: f32,
+    use_dual: u8,
+) {
+    let b_s = core::slice::from_raw_parts(b_dct, w * (w - 1));
+    (*eng).init(
+        w, d, k_max, lam0, alpha_min, e_alpha, dc_alpha, b_s,
+        n_warmup, n_cal, alpha, adapt_env, sev_mult, dc_relock, huber_clip, use_dual,
+    );
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ppc_autocal_state(eng: *const AutoCalEngineF32) -> u8 {
+    (*eng).cal.state
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ppc_autocal_run_stream(
+    eng: *mut AutoCalEngineF32,
+    x_batch: *const f32,
+    n_samples: usize,
+    out_state: *mut u8,
+    out_shape: *mut f32,
+    out_energy: *mut f32,
+    out_level: *mut f32,
+    out_combined: *mut f32,
+    out_alarm_combined: *mut u8,
+) {
+    let e = &mut *eng;
+    let stride = e.engine.w * e.engine.d;
+    let x_all = core::slice::from_raw_parts(x_batch, n_samples * stride);
+    let st_s = core::slice::from_raw_parts_mut(out_state, n_samples);
+    let sh_s = core::slice::from_raw_parts_mut(out_shape, n_samples);
+    let en_s = core::slice::from_raw_parts_mut(out_energy, n_samples);
+    let lv_s = core::slice::from_raw_parts_mut(out_level, n_samples);
+    let cb_s = core::slice::from_raw_parts_mut(out_combined, n_samples);
+    let al_s = core::slice::from_raw_parts_mut(out_alarm_combined, n_samples);
+    for i in 0..n_samples {
+        let win = &x_all[i * stride..(i + 1) * stride];
+        let r = e.step(win);
+        st_s[i] = r.state;
+        sh_s[i] = r.s_shape;
+        en_s[i] = r.s_energy;
+        lv_s[i] = r.s_level;
+        cb_s[i] = r.s_combined;
+        al_s[i] = r.alarm_combined;
     }
 }
