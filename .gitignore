@@ -23,6 +23,9 @@ venv/
 .agents/mcp_config.json
 .env
 
+# Local release & marketing launch kit (private working notes)
+LAUNCH_KIT.md
+
 # OS & editor files
 .DS_Store
 Thumbs.db

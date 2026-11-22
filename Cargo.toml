@@ -20,6 +20,7 @@ exclude = [
     ".agents/*",
     ".github/*",
     "TUTORIAL_ANTIGRAVITY_APP_MCP.md",
+    "LAUNCH_KIT.md",
 ]
 
 [lib]

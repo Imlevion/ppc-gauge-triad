@@ -1,8 +1,21 @@
 # PPC-Gauge-Triad v0.7.0 (`ppc_gauge_triad_rs`)
-<a href="https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml"><img src="https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-<a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License"></a>
+
+[![CI](https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml/badge.svg)](https://github.com/Imlevion/ppc-gauge-triad/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/ppc_gauge_triad_rs.svg)](https://crates.io/crates/ppc_gauge_triad_rs)
+[![docs.rs](https://docs.rs/ppc_gauge_triad_rs/badge.svg)](https://docs.rs/ppc_gauge_triad_rs)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) streaming anomaly engine with an on-chip Zero-Touch Auto-Warmup state machine (`AutoCalBufF32`: `Warmup -> Calibrate -> Monitor`) for multi-channel telemetry and embedded physical sensors ($X_t \in \mathbb{R}^{w \times d}$, default $w=8, d=4$).
+
+### Visual Benchmark Highlights (Verified Offline Level 2 Replay)
+
+![8-Server Chronological Replay and Preset Trade-Off](paper/figures/fig1_8server_ablation.png)
+*Figure 1 — Real-world 8-server chronological replay (SMD + PSM, locked a priori presets): **v0.7 High-Recall** reaches **78.7%** mean AUROC and **v0.7 Low-FAR** reaches **77.1%** mean AUROC at **7.6%** mean FAR, ahead of classical batch baselines (Raw kNN `74.9%`, IsoForest `74.0%`, OC-SVM `71.8%`) with `0 B` heap and `0` matrix inversions.*
+
+![Cross-Device Zero-Shot vs. v0.7 On-Chip AutoCalEngineF32](paper/figures/fig2_onchip_autowarmup.png)
+*Figure 2 — v0.7 On-Chip Zero-Touch Auto-Warmup (`AutoCalEngineF32`, **14,744 B / 14.40 KB** static SRAM on ARM Cortex-M4F): pure zero-shot cross-device transfer is unsupported (**29.7%** mean AUROC), whereas unsupervised on-chip `Warmup -> Calibrate -> Monitor` (`100–400` normal windows, `0` labels) recovers **75.3% → 82.9%** mean AUROC.*
+
+> Reproduce all publication figures (`fig1`, `fig2`, and `fig3` 50k-window Dual-Stage Alarm Gate FAR reduction `10.44% -> 0.30%`) locally via `python benchmarks/generate_paper_figures.py --offline`.
 
 ## Validation Status
 
@@ -85,6 +98,7 @@ python benchmarks/run_benchmarks.py --all --offline
 
 ```text
 ├── Cargo.toml                         # crates.io-ready manifest (MIT OR Apache-2.0, #![no_std])
+├── CITATION.cff                       # CFF 1.2.0 citation metadata (GitHub "Cite this repository")
 ├── LICENSE-MIT / LICENSE-APACHE       # Dual open-source licenses
 ├── CHANGELOG.md                       # Versioned release notes (v0.6.1 -> v0.7.0)
 ├── src/lib.rs                         # Core GaugeTriadEngineF32, v0.7 AutoCalBufF32/AutoCalEngineF32 & C FFI
