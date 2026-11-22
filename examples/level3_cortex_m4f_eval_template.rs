@@ -10,11 +10,17 @@
 //!
 //! 1. Drop `run_cortex_m4f_dwt_eval()` into your board's `cortex-m-rt` `#[entry]` firmware
 //!    (linking `ppc_gauge_triad_rs` with `default-features = false` for `#![no_std]`).
+//!    Note: `ppc_gauge_triad_rs` intentionally does **not** define a `#[panic_handler]` by
+//!    default, so your firmware binary must supply one (e.g. `panic-halt` or `panic-probe`)
+//!    without risking duplicate `panic_impl` linker conflicts.
 //! 2. Enable the CoreSight DWT cycle counter (provided below via raw ARMv7E-M MMIO addresses
 //!    `DEMCR = 0xE000_EDFC`, `DWT_CTRL = 0xE000_1000`, `DWT_CYCCNT = 0xE000_1004` — zero extra
 //!    peripheral crates required).
 //! 3. Flash and capture output via `probe-rs` / `defmt` / RTT or SWO UART.
-//! 4. Measure `.text` / `.rodata` / `.bss` / `.data` via `arm-none-eabi-size` or `cargo bloat --release --target thumbv7em-none-eabihf`.
+//! 4. Measure full firmware `.text` / `.rodata` / `.bss` / `.data` via `arm-none-eabi-size` or
+//!    `cargo bloat --release --target thumbv7em-none-eabihf` (remember: the `< 16 KB` compile-time
+//!    assertion covers only the engine struct `.bss` size, NOT stack, interrupts, DMA/sensor
+//!    buffers, or RTOS/BSP runtime RAM).
 //! 5. Measure active mW power with an inline power profiler (e.g., Nordic PPK2 / Otii Arc / oscilloscope shunt)
 //!    while looping `AutoCalEngineF32::step()` on real IMU / thermal ADC windows.
 //!
@@ -75,6 +81,19 @@ fn fill_deterministic_window(step: u32, out: &mut [f32; W * D]) {
             out[base + j] = wave + 0.15 * frac;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Firmware-Side Panic Handler (active on bare-metal ARM targets)
+// Replace with `use panic_halt as _;` or `use panic_probe as _;` in your BSP binary.
+// Compiling this alongside `ppc_gauge_triad_rs` (`default-features = false`) also
+// verifies zero duplicate `panic_impl` lang-item conflict from the library crate.
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "arm")]
+#[panic_handler]
+fn firmware_panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
 }
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,10 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["std"]
 std = []
+# Opt-in minimal `loop {}` #[panic_handler] ONLY for standalone `#![no_std]` cdylib builds.
+# Keep DISABLED when depending on `ppc_gauge_triad_rs` as a Rust library inside embedded firmware
+# (the final firmware binary must supply its own #[panic_handler], e.g. `panic-halt` or `panic-probe`).
+panic-handler = []
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }

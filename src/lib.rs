@@ -24,18 +24,29 @@
 //!    Fixed-size `#![no_std]` state machine (`Warmup -> Calibrate -> Monitor`, `MAX_CAL = 256`)
 //!    computing split-conformal quantiles and `log1p`-MAD triad normalizers directly on chip.
 //!
-//! ## Embedded Resource Profile & Design Boundaries
+//! ## Embedded Resource Profile, `#![no_std]` Integration & Design Boundaries
 //!
-//! - **Static SRAM:** [`GaugeTriadEngineF32`] = `11,624 B` (`11.35 KB`) on 64-bit / `11,604 B`
-//!   (`11.33 KB`) on ARM Cortex-M4F; combined [`AutoCalEngineF32`] = `14,768 B` (`14.42 KB`) on
-//!   64-bit / `14,744 B` (`14.40 KB`) on Cortex-M4F (`< 16 KB` enforced at compile time).
+//! - **Engine Static Struct SRAM (`< 16 KB` compile-time assert):** [`GaugeTriadEngineF32`] =
+//!   `11,624 B` (`11.35 KB`) on 64-bit / `11,604 B` (`11.33 KB`) on ARM Cortex-M4F; combined
+//!   [`AutoCalEngineF32`] = `14,768 B` (`14.42 KB`) on 64-bit / `14,744 B` (`14.40 KB`) on
+//!   Cortex-M4F. **Important:** this bounds only the engine's static struct `.bss` footprint and
+//!   does *not* prove that a user's complete firmware fits inside `16 KB` RAM — final firmware
+//!   RAM must additionally budget call stack (including a `1,024 B` stack scratch array during
+//!   `finalize_calibration()`), interrupt frames, DMA/sensor buffers, logging buffers, and
+//!   BSP/RTOS runtime overhead.
 //! - **Heap Allocation:** `0 B` (`#![no_std]`, zero `alloc`). **Matrix Inversions:** `0`.
+//! - **`#![no_std]` Library vs. Final Firmware (`#[panic_handler]`):** Compiling with
+//!   `default-features = false` builds a pure `#![no_std]` library (`rlib`) **without** defining
+//!   a `#[panic_handler]`, avoiding duplicate `panic_impl` conflicts with firmware panic crates
+//!   (`panic-halt`, `panic-probe`, `panic-rtt-target`, etc.). Your final `#![no_std]` firmware
+//!   binary must provide its own `#[panic_handler]` and startup runtime. Enable the opt-in
+//!   `panic-handler` Cargo feature *only* if compiling a standalone `#![no_std]` `cdylib`.
 //! - **Unsupervised Per-Device Warmup Required:** Pure zero-shot transfer across heterogeneous
 //!   channel topologies is not claimed (`29.7%` mean AUROC across unseen servers). Zero-touch
 //!   per-device unsupervised warmup (`100–400` normal windows, `0` labels) is a design
 //!   requirement and recovers `75.3%–82.9%` mean AUROC.
-//! - **Level 3 Hardware Status:** Physical silicon cycle counts, `.map` flash/RAM footprint,
-//!   and mW power profiling remain `PENDING` external hardware measurement (see
+//! - **Level 3 Hardware Status:** Physical silicon cycle counts, full `.elf`/`.map` flash/RAM
+//!   footprints, and mW power profiling remain `PENDING` external hardware measurement (see
 //!   `examples/level3_cortex_m4f_eval_template.rs` for the ARM Cortex-M4F DWT evaluation template).
 //!
 //! ## Quick Start: On-Chip Zero-Touch Auto-Warmup (`AutoCalEngineF32`)
@@ -90,7 +101,10 @@
 //! assert_eq!(res.alarm_combined, 1);
 //! ```
 
-#[cfg(not(feature = "std"))]
+// Only emit a fallback `#[panic_handler]` when explicitly opted in via `--features panic-handler`
+// (for standalone `#![no_std]` cdylib checks). Library consumers linking `ppc_gauge_triad_rs`
+// with `default-features = false` MUST supply their own firmware `#[panic_handler]`.
+#[cfg(all(not(feature = "std"), feature = "panic-handler"))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
