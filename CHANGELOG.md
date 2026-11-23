@@ -5,6 +5,28 @@ All notable changes to `ppc_gauge_triad_rs` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+*(Crate version remains `0.7.1`: no changes to Rust engine behavior, presets, or public Rust/C API.)*
+
+### Added
+- **Fair Streaming & Window Baselines (`benchmarks/baselines.py`, `benchmarks/results_baselines.md`):**
+  - Added pure-NumPy/scikit-learn offline implementations of **Half-Space Trees** (Tan et al., IJCAI 2011; 5 seeds), **RS-Hash / RS-Stream** (Sathe & Aggarwal, ICDM 2016; 5 seeds), and **PCA + Mahalanobis** (both matched `32-D` windows and full raw `w*D` windows), alongside live re-evaluation of **Isolation Forest** (5 seeds), **kNN (`k=5`)**, and **OC-SVM** on identical `w = 8` windows, chronological splits, split-conformal calibration (`alpha = 0.05`), and non-point-adjusted window-level labels.
+  - Added CLI flag `python benchmarks/run_benchmarks.py --baselines --offline` and unit tests verifying determinism, anomaly separation, and shift-invariant Dual-Stage Gate monotonicity (`far_dual <= far_raw`).
+  - Documented deep temporal baselines (`USAD` / `TranAD`) honestly as `PENDING / Future Work` (PyTorch not installed in the offline verification environment).
+- **Zero-Shot Score-Inversion Diagnostic:** Added empirical normal vs. fault median score diagnostics for `0w` cross-device zero-shot (`29.7%` mean AUROC) in `benchmarks/run_benchmarks.py`.
+
+### Changed
+- **Honest Benchmark Visualization (`paper/figures/fig1_8server_ablation.png` / `.pdf` & `benchmarks/generate_paper_figures.py`):**
+  - Changed Panel (b) y-axis baseline from `60` to `50` (`50–105`) so AUROC differences are not visually exaggerated.
+  - Replaced hardcoded historical Colab baseline constants with live computed baselines (`HS-Trees`, `RS-Hash`, `PCA+Mahalanobis` 32-D & Full-D, `IsoForest`, `kNN`, `OC-SVM`) and added across-server `mean ± std` error bars plus Dual-Gate FAR annotations.
+  - Updated `fig2` legend label from `"Pure Zero-Shot (Unsupported)"` to `"Pure Zero-Shot (Inverted <50%)"`.
+- **Documentation & Governance (`README.md`, `AGENTS.md`, `.agents/mcp_config.example.json`):**
+  - Explicitly documented the **non-point-adjusted** window-level SMD/PSM evaluation protocol in `README.md`.
+  - Added an honest **Preset Provenance** section citing exact commit hashes (`ba1a5068`, `e2013cf2`, `33cc3523`) and explicitly noting that Git history alone cannot prove *a priori* preset locking prior to initial Colab SMD/PSM exploration.
+  - Explained `29.7%` (< 50%) cross-device zero-shot as **inverted score direction** with measured normal vs. fault median scores (`33.5–37.8` vs. `26.2–28.1`).
+  - Added **GitHub Workflow Rules** and **X MCP Rules** to `AGENTS.md` and added the `"x"` server entry (no secrets) to `.agents/mcp_config.example.json`.
+
 ## [0.7.1] - 2026-11-22
 
 ### Added
@@ -30,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `thumbv7em-none-eabihf`.
 
 ### Documentation & CI
-- Synced `AGENTS.md` to v0.7.1 identity, completed milestones, and embedded memory accounting rules.
+- Synced `AGENTS.md` to v0.7.0 identity, completed milestones, and embedded memory accounting rules.
 - Separated automated GitHub CI verification scope from locally reproduced offline SMD/PSM
   research benchmarks in `README.md`.
 - Explicitly distinguished compile-time engine static struct SRAM (`< 16 KB`) from total final
