@@ -29,14 +29,11 @@ if str(REPO_ROOT) not in sys.path:
 
 from benchmarks.dataset_cache import BENCHMARK_SERVERS, DEFAULT_CACHE_DIR, populate_all_caches
 from benchmarks.ppc_triad_wrapper import PRESET_LOW_FAR, load_rust_lib
-from benchmarks.run_benchmarks import run_8_server_benchmark, run_warmup_curve
-
-# Verified reference classical baselines from VALIDATION_REPORT_v061.md Section 4.1
-CLASSICAL_BASELINES_8SRV = {
-    "Raw kNN": 74.9,
-    "Raw IsoForest": 74.0,
-    "Raw OC-SVM": 71.8,
-}
+from benchmarks.run_benchmarks import (
+    run_8_server_benchmark,
+    run_baseline_comparison,
+    run_warmup_curve,
+)
 
 # Verified 50,000-window, 5-seed independent streaming audit (VALIDATION_REPORT_v061.md Section 4.4)
 TEST5_SEEDS = [101, 202, 303, 404, 505]
@@ -68,8 +65,8 @@ def configure_style() -> None:
     )
 
 
-def plot_fig1_8server_ablation(srv_res: dict, out_dir: Path) -> None:
-    """Figure 1: 8-Server AUROC ablation + locked preset AUROC/FAR/Recall trade-off."""
+def plot_fig1_8server_ablation(srv_res: dict, base_res: dict, out_dir: Path) -> None:
+    """Figure 1: 8-Server AUROC ablation + fair baseline mean +- std (y-axis from 50, no PA)."""
     servers = [name for name, _, _ in BENCHMARK_SERVERS]
     short_names = [
         s.replace("SMD machine-", "SMD ").replace("PSM eBay Server", "PSM eBay") for s in servers
@@ -78,8 +75,10 @@ def plot_fig1_8server_ablation(srv_res: dict, out_dir: Path) -> None:
     hr_au = [srv_res["per_server"][s]["high_recall"]["auroc"] for s in servers]
     lf_au = [srv_res["per_server"][s]["low_far"]["auroc"] for s in servers]
 
+    summary = base_res["combined_summary"]
+
     fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(11.2, 4.2), gridspec_kw={"width_ratios": [1.85, 1.0]}
+        1, 2, figsize=(13.6, 4.7), gridspec_kw={"width_ratios": [1.35, 1.35]}
     )
 
     x = np.arange(len(servers))
@@ -104,85 +103,92 @@ def plot_fig1_8server_ablation(srv_res: dict, out_dir: Path) -> None:
         lw=0.6,
     )
 
+    rsh_mean = summary["rs_hash"]["auroc_mean"]
+    pcaf_mean = summary["pca_mahalanobis_fulld"]["auroc_mean"]
     ax1.axhline(
-        CLASSICAL_BASELINES_8SRV["Raw kNN"],
+        pcaf_mean,
         color="#D55E00",
         ls=":",
-        lw=1.3,
-        label="Raw kNN Mean (74.9%)",
+        lw=1.35,
+        label=f"PCA+Mahal Full-D Mean ({pcaf_mean:.1f}%)",
     )
     ax1.axhline(
-        CLASSICAL_BASELINES_8SRV["Raw IsoForest"],
+        rsh_mean,
         color="#CC79A7",
         ls="-.",
-        lw=1.1,
-        label="Raw IsoForest Mean (74.0%)",
+        lw=1.25,
+        label=f"RS-Hash Mean ({rsh_mean:.1f}%)",
     )
 
     ax1.set_xticks(x)
-    ax1.set_xticklabels(short_names, rotation=22, ha="right")
-    ax1.set_ylabel("AUROC (%)")
-    ax1.set_ylim(42, 114)
+    ax1.set_xticklabels(short_names, rotation=24, ha="right")
+    ax1.set_ylabel("Window-Level AUROC (%, No Point-Adjust)")
+    ax1.set_ylim(42, 116)
     ax1.set_title("(a) 8-Server Chronological Replay (SMD + PSM)")
-    ax1.legend(loc="upper center", ncol=2, frameon=True, framealpha=0.95, fontsize=7.8)
+    ax1.legend(loc="upper center", ncol=2, frameon=True, framealpha=0.95, fontsize=7.5)
 
-    # Panel (b): 8-Server Mean Comparison (AUROC, Recall, FAR)
-    labels = ["Raw\nOC-SVM", "Raw\nIsoFor.", "Raw\nkNN", "v0.5\nNoAdapt", "v0.7\nLow-FAR", "v0.7\nHigh-Rec"]
-    mean_au = [
-        CLASSICAL_BASELINES_8SRV["Raw OC-SVM"],
-        CLASSICAL_BASELINES_8SRV["Raw IsoForest"],
-        CLASSICAL_BASELINES_8SRV["Raw kNN"],
-        srv_res["mean"]["v05"]["auroc"],
-        srv_res["mean"]["low_far"]["auroc"],
-        srv_res["mean"]["high_recall"]["auroc"],
+    # Panel (b): Fair Baseline Mean +- Std AUROC (y-axis strictly starting at 50)
+    bar_specs = [
+        ("hs_trees", "HS-Trees\n(Stream)", "#B8C4D0"),
+        ("pca_mahalanobis_32d", "PCA+Mah.\n(32-D)", "#CBD2D9"),
+        ("raw_ocsvm", "OC-SVM\n(32-D)", "#CBD2D9"),
+        ("v05", "v0.5\nNoAdapt", "#9AA5B1"),
+        ("v07_low_far", "v0.7\nLow-FAR", "#009E73"),
+        ("raw_isoforest", "IsoFor.\n(32-D)", "#D8B4C8"),
+        ("v07_high_recall", "v0.7\nHigh-Rec", "#0072B2"),
+        ("raw_knn", "kNN\n(32-D)", "#E69F00"),
+        ("rs_hash", "RS-Hash\n(Stream)", "#CC79A7"),
+        ("pca_mahalanobis_fulld", "PCA+Mah.\n(Full-D)", "#D55E00"),
     ]
-    colors = ["#CBD2D9", "#CC79A7", "#D55E00", "#9AA5B1", "#009E73", "#0072B2"]
+    labels = [spec[1] for spec in bar_specs]
+    mean_au = [summary[spec[0]]["auroc_mean"] for spec in bar_specs]
+    std_au = [summary[spec[0]]["auroc_std"] for spec in bar_specs]
+    dual_fars = [summary[spec[0]]["far_dual_mean"] for spec in bar_specs]
+    colors = [spec[2] for spec in bar_specs]
+
     xb = np.arange(len(labels))
-    bars = ax2.bar(xb, mean_au, width=0.68, color=colors, edgecolor="#222222", lw=0.6)
-    for bar, val in zip(bars, mean_au):
+    bars = ax2.bar(
+        xb,
+        mean_au,
+        yerr=std_au,
+        capsize=3.2,
+        error_kw={"elinewidth": 1.0, "ecolor": "#222222", "capthick": 0.9},
+        width=0.66,
+        color=colors,
+        edgecolor="#222222",
+        lw=0.6,
+    )
+    for bar, m, s, far_val in zip(bars, mean_au, std_au, dual_fars):
+        cx = bar.get_x() + bar.get_width() / 2.0
         ax2.text(
-            bar.get_x() + bar.get_width() / 2.0,
-            val + 0.6,
-            f"{val:.1f}%",
+            cx,
+            m + s + 0.9,
+            f"{m:.1f}\n±{s:.1f}",
             ha="center",
             va="bottom",
-            fontsize=8.0,
+            fontsize=6.9,
+            fontweight="bold",
+            color="#1F2933",
+        )
+        # Dual-gate FAR label neatly seated near bottom of each bar (y=51.2..58)
+        txt_col = "white" if bar.get_facecolor()[:3] in ((0.0, 0.6196078431372549, 0.45098039215686275), (0.0, 0.4470588235294118, 0.6980392156862745)) else "#1F2933"
+        ax2.text(
+            cx,
+            51.4,
+            f"FAR\n{far_val:.1f}%",
+            ha="center",
+            va="bottom",
+            fontsize=6.5,
+            color=txt_col,
             fontweight="bold",
         )
 
-    # Clean vertical labels centered inside the v0.7 preset bars (zero clipping)
-    lf_far = srv_res["mean"]["low_far"]["far"]
-    hr_far = srv_res["mean"]["high_recall"]["far"]
-    hr_rec = srv_res["mean"]["high_recall"]["recall"]
-    lf_rec = srv_res["mean"]["low_far"]["recall"]
-    ax2.text(
-        4,
-        68.5,
-        f"FAR {lf_far:.1f}%\nRec {lf_rec:.1f}%",
-        ha="center",
-        va="center",
-        rotation=90,
-        fontsize=7.3,
-        color="white",
-        fontweight="bold",
-    )
-    ax2.text(
-        5,
-        69.2,
-        f"FAR {hr_far:.1f}%\nRec {hr_rec:.1f}%",
-        ha="center",
-        va="center",
-        rotation=90,
-        fontsize=7.3,
-        color="white",
-        fontweight="bold",
-    )
-
     ax2.set_xticks(xb)
-    ax2.set_xticklabels(labels, fontsize=7.8)
-    ax2.set_ylabel("8-Server Mean AUROC (%)")
-    ax2.set_ylim(60, 85)
-    ax2.set_title("(b) Mean AUROC & Preset Trade-Off")
+    ax2.set_xticklabels(labels, fontsize=7.2)
+    ax2.set_ylabel("8-Server Mean ± Std AUROC (%)")
+    ax2.set_ylim(50, 105)
+    ax2.set_yticks([50, 60, 70, 80, 90, 100])
+    ax2.set_title("(b) 8-Server Mean ± Std AUROC & Dual-Gate FAR (No Point-Adjust)")
 
     fig.tight_layout()
     for ext in ("png", "pdf"):
@@ -250,7 +256,7 @@ def plot_fig2_onchip_autowarmup(warm_res: dict, out_dir: Path) -> None:
             zorder=6,
         )
 
-    ax.axvspan(-18, 22, color="#D55E00", alpha=0.09, label="Pure Zero-Shot (Unsupported)")
+    ax.axvspan(-18, 22, color="#D55E00", alpha=0.09, label="Pure Zero-Shot (Inverted <50%)")
     ax.axvspan(85, 418, color="#009E73", alpha=0.07, label="Per-Device Warmup Zone (100–400w)")
 
     ax.set_xticks(xs)
@@ -349,9 +355,10 @@ def main() -> int:
     cache_raw = populate_all_caches(cache_dir=args.cache_dir, offline=args.offline, verbose=True)
 
     srv_res = run_8_server_benchmark(cache_raw)
+    base_res = run_baseline_comparison(cache_raw, srv_res=srv_res, write_md_path=None)
     warm_res = run_warmup_curve(cache_raw, preset=PRESET_LOW_FAR)
 
-    plot_fig1_8server_ablation(srv_res, args.out_dir)
+    plot_fig1_8server_ablation(srv_res, base_res, args.out_dir)
     plot_fig2_onchip_autowarmup(warm_res, args.out_dir)
     plot_fig3_dual_gate_far(args.out_dir)
 
@@ -360,6 +367,7 @@ def main() -> int:
         "core_sram_bytes": int(lib.ppc_triad_engine_bytes()),
         "autocal_sram_bytes": int(lib.ppc_autocal_engine_bytes()),
         "servers_8": srv_res,
+        "baselines_8": base_res,
         "warmup_curve": warm_res,
         "test5_50k_5seeds": {
             "seeds": TEST5_SEEDS,

@@ -5,6 +5,10 @@
       "headers": {
         "Authorization": "Bearer YOUR_GITHUB_TOKEN"
       }
+    },
+    "x": {
+      "command": "node",
+      "args": ["<PATH_TO_X_MCP_SERVER>/build/index.js"]
     }
   }
 }
