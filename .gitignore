@@ -3,6 +3,8 @@
 Cargo.lock
 firmware/*/target/
 firmware/*/Cargo.lock
+tools/*/target/
+tools/*/Cargo.lock
 
 # Cached SMD/PSM datasets (downloaded locally by benchmarks/dataset_cache.py)
 /data_cache/
