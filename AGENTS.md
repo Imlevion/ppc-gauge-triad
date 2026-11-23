@@ -27,3 +27,18 @@
 ## Next Roadmap Milestones
 1. **Level 3 Physical Silicon Verification (`Imlevion/ppc-gauge-triad#3`):** Flash `firmware/cortex-m4f-eval/` onto STM32F4/STM32H7, nRF52840, or ESP32-S3 hardware; measure real DWT cycle counts, full firmware `.elf`/`.map` Flash & RAM (incl. stack/interrupts via `arm-none-eabi-size`/`cargo-bloat`), mW power, and real IMU/thermal sensor streams via `probe-rs`.
 2. **Optional Ecosystem Extensions:** Native Python (`PyO3`/`maturin`) wheels and formal arXiv/Zenodo preprint publication once ready.
+
+## GitHub Workflow Rules
+- Always do new work on a dedicated feature/chore branch (never commit directly to `main`).
+- Keep commits small and descriptive, push the branch, and open a Pull Request citing real measured numbers from commands run in the current session.
+- Merge PRs only after `cargo test` (plus relevant local tests) and all GitHub Actions CI checks are green.
+- Never publish to `crates.io` (`cargo publish`) without explicit instruction from the repository owner.
+
+## X MCP Rules
+- Use X MCP strictly to keep public posts consistent with verified repository state.
+- Every number in a post must match the exact output of a command run or verified file in the repository — never invent, estimate, or round numbers upward.
+- Zero hype claims (no "SOTA", no "beats everything"). Preserve honest framing: no magic zero-shot transfer, Level 3 physical silicon remains `PENDING`, and QEMU is functional verification only.
+- Always present the exact final post text to the repository owner and publish **only** after receiving an explicit `"OK"`.
+- If the MCP tool supports editing posts, edit the pinned post. Otherwise, reply in the same thread prefixed with `Update (v<version>):`, at most 3 posts, each strictly under 280 characters, including the GitHub link and hashtags `#rustlang #embedded #opensource #anomalydetection`.
+- Record every published final post text in `docs/x_update_log.md` (date, exact text, and post link).
+- Never store or commit X API keys, tokens, or secrets in the repository, commits, files, or logs; credentials live strictly in local Antigravity MCP config (`~/.gemini/config/mcp_config.json`).
