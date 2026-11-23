@@ -7,6 +7,23 @@
 
 Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) streaming anomaly engine with an on-chip Zero-Touch Auto-Warmup state machine (`AutoCalBufF32`: `Warmup -> Calibrate -> Monitor`) for multi-channel telemetry and embedded physical sensors ($X_t \in \mathbb{R}^{w \times d}$, default $w=8, d=4$).
 
+Deterministic, zero-heap (`#![no_std]`), zero-matrix-inversion Rust (`f32`) streaming anomaly engine with an on-chip Zero-Touch Auto-Warmup state machine (`AutoCalBuff32`: `Warmup -> Calibrate -> Monitor`) for multi-channel telemetry and embedded physical sensors ($X_t \in \mathbb{R}^{w \times d}$, default $w = 8, d = 4$).
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    Core["<b>src/lib.rs</b><br/>Core Triad Engine (#![no_std], f32)"]
+    
+    Core --> FFI["<b>include/ & examples/</b><br/>C ABI Header & Streaming Demo"]
+    Core --> MCU["<b>firmware/cortex-m4f-eval/</b><br/>Bare-Metal ARM Cortex-M4F"]
+    Core --> Bench["<b>benchmarks/ & notebooks/</b><br/>Python Harness & Dataset Eval"]
+    Bench --> Paper["<b>paper/</b><br/>LaTeX Manuscript & Figures"]
+```
+
+## Visual Benchmark Highlights (Verified Offline Level 2 Replay)
+
+
 ### Visual Benchmark Highlights (Verified Offline Level 2 Replay)
 
 ![8-Server Chronological Replay and Preset Trade-Off](paper/figures/fig1_8server_ablation.png)
