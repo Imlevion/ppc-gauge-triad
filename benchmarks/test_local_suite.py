@@ -19,12 +19,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarks.baselines import (
-    HalfSpaceTreesDetector,
-    PCAMahalanobisDetector,
-    RSHashDetector,
-    evaluate_score_stream,
-)
 from benchmarks.dataset_cache import _atomic_save_npz, load_psm_cached, load_smd_cached
 from benchmarks.ppc_triad_wrapper import (
     PRESET_HIGH_RECALL,
@@ -160,46 +154,6 @@ class TestPPCGaugeLocalSuite(unittest.TestCase):
         self.assertEqual((PRESET_HIGH_RECALL.e_alpha, PRESET_HIGH_RECALL.dc_alpha, PRESET_HIGH_RECALL.huber_clip), (0.002, 0.001, 1.0))
         self.assertEqual((PRESET_LOW_FAR.e_alpha, PRESET_LOW_FAR.dc_alpha, PRESET_LOW_FAR.huber_clip), (0.008, 0.004, 1.5))
         self.assertEqual((PRESET_THERMAL_CHIP.e_alpha, PRESET_THERMAL_CHIP.dc_alpha, PRESET_THERMAL_CHIP.huber_clip, PRESET_THERMAL_CHIP.dc_relock), (0.20, 0.25, 0.0, 6))
-
-    def test_streaming_and_pca_baselines_sanity_and_determinism(self) -> None:
-        rng = np.random.default_rng(2026)
-        x_tr = rng.standard_normal((400, 16))
-        x_cal = rng.standard_normal((120, 16))
-        x_te = rng.standard_normal((120, 16))
-        y_te = np.zeros(120, dtype=np.int32)
-        # Inject clear synthetic anomalies on last 30 windows
-        x_te[90:] += 6.0
-        y_te[90:] = 1
-
-        # Half-Space Trees: determinism + anomaly separation
-        hst1 = HalfSpaceTreesDetector(n_trees=15, max_depth=6, window_size=100, size_limit=10, seed=0).fit(x_tr)
-        hst2 = HalfSpaceTreesDetector(n_trees=15, max_depth=6, window_size=100, size_limit=10, seed=0).fit(x_tr)
-        s_cal_1, s_te_1 = hst1.score_stream(x_cal), hst1.score_stream(x_te)
-        s_cal_2, s_te_2 = hst2.score_stream(x_cal), hst2.score_stream(x_te)
-        self.assertTrue(np.array_equal(s_te_1, s_te_2))
-        self.assertTrue(np.all(np.isfinite(s_te_1)))
-        m_hst = evaluate_score_stream(s_cal_1, s_te_1, y_te)
-        self.assertGreater(m_hst.auroc, 85.0)
-        self.assertLessEqual(m_hst.far_dual, m_hst.far_raw + 1e-9)
-
-        # RS-Hash / RS-Stream: determinism + anomaly separation
-        rsh1 = RSHashDetector(n_estimators=40, window_size=300, cms_width=512, cms_depth=4, seed=0).fit(x_tr)
-        rsh2 = RSHashDetector(n_estimators=40, window_size=300, cms_width=512, cms_depth=4, seed=0).fit(x_tr)
-        r_cal_1, r_te_1 = rsh1.score_stream(x_cal), rsh1.score_stream(x_te)
-        r_cal_2, r_te_2 = rsh2.score_stream(x_cal), rsh2.score_stream(x_te)
-        self.assertTrue(np.array_equal(r_te_1, r_te_2))
-        self.assertTrue(np.all(np.isfinite(r_te_1)))
-        m_rsh = evaluate_score_stream(r_cal_1, r_te_1, y_te)
-        self.assertGreater(m_rsh.auroc, 85.0)
-        self.assertLessEqual(m_rsh.far_dual, m_rsh.far_raw + 1e-9)
-
-        # PCA + Mahalanobis: determinism + anomaly separation
-        pca_m = PCAMahalanobisDetector(variance_ratio=0.95, max_components=16, reg=1e-3).fit(x_tr)
-        p_cal, p_te = pca_m.score(x_cal), pca_m.score(x_te)
-        self.assertTrue(np.all(np.isfinite(p_te)))
-        m_pca = evaluate_score_stream(p_cal, p_te, y_te)
-        self.assertGreater(m_pca.auroc, 95.0)
-        self.assertLessEqual(m_pca.far_dual, m_pca.far_raw + 1e-9)
 
 
 if __name__ == "__main__":

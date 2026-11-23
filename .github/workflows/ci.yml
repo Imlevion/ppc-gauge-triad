@@ -37,6 +37,9 @@ jobs:
       - name: Run full Rust Level 1 & v0.7 AutoCal suite incl. 1M-window L1.9 (release)
         run: cargo test --release -- --include-ignored
 
+      - name: Run Rust-first CLI & streaming baseline unit tests (tools/ppc-bench)
+        run: cargo test --manifest-path tools/ppc-bench/Cargo.toml --verbose
+
       - name: Run Level 3 Cortex-M4F template structural dry-run
         run: cargo run --example level3_cortex_m4f_eval_template
 
@@ -140,11 +143,10 @@ jobs:
         working-directory: firmware/cortex-m4f-eval
         run: cargo build --release
 
-      - name: Inspect real linked .elf Flash & Static RAM footprint (arm-none-eabi-size + Python)
+      - name: Inspect real linked .elf Flash & Static RAM footprint (arm-none-eabi-size + Rust ppc-bench)
         run: |
           arm-none-eabi-size -A firmware/cortex-m4f-eval/target/thumbv7em-none-eabihf/release/ppc-m4f-eval
-          python3 benchmarks/inspect_elf.py
-          python3 -c "import json, subprocess; d=json.loads(subprocess.check_output(['python3','benchmarks/inspect_elf.py','--json'])); assert d['breakdown'].get('.data', 0) == 0, d; assert d['total_static_ram_bytes'] < 16384, d; print('ELF_ASSERT_PASS: Flash=', d['total_flash_bytes'], 'B, StaticRAM=', d['total_static_ram_bytes'], 'B')"
+          cargo run --release --manifest-path tools/ppc-bench/Cargo.toml -- inspect-elf --check-budget
 
       - name: Build & execute compiled ARMv7E-M FPU binary on QEMU (mps2-an386)
         working-directory: firmware/cortex-m4f-eval

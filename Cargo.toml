@@ -15,6 +15,7 @@ categories = ["no-std", "embedded", "algorithms", "science"]
 exclude = [
     "data_cache/*",
     "firmware/*",
+    "tools/*",
     "notebooks/*",
     "paper/*",
     "benchmarks/*",

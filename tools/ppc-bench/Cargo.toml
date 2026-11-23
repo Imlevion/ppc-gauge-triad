@@ -1,0 +1,16 @@
+[package]
+name = "ppc-bench"
+version = "0.7.1"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+description = "Rust-first CLI for PPC-Gauge-Triad benchmarks, streaming baselines, and Cortex-M4F ELF footprint inspection"
+
+[dependencies]
+ppc_gauge_triad_rs = { path = "../.." }
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
