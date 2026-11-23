@@ -10,11 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *(Crate version remains `0.7.1`: no changes to Rust engine behavior, presets, or public Rust/C API.)*
 
 ### Added
-- **Fair Streaming & Window Baselines (`benchmarks/baselines.py`, `benchmarks/results_baselines.md`):**
-  - Added pure-NumPy/scikit-learn offline implementations of **Half-Space Trees** (Tan et al., IJCAI 2011; 5 seeds), **RS-Hash / RS-Stream** (Sathe & Aggarwal, ICDM 2016; 5 seeds), and **PCA + Mahalanobis** (both matched `32-D` windows and full raw `w*D` windows), alongside live re-evaluation of **Isolation Forest** (5 seeds), **kNN (`k=5`)**, and **OC-SVM** on identical `w = 8` windows, chronological splits, split-conformal calibration (`alpha = 0.05`), and non-point-adjusted window-level labels.
-  - Added CLI flag `python benchmarks/run_benchmarks.py --baselines --offline` and unit tests verifying determinism, anomaly separation, and shift-invariant Dual-Stage Gate monotonicity (`far_dual <= far_raw`).
+- **Rust-First CLI (`tools/ppc-bench/`):**
+  - Migrated the 8-server SMD+PSM chronological runner, Test 3 / Test 3B on-chip `AutoCalEngineF32` warmup runner, host CPU latency profiler, **Half-Space Trees** (5 seeds), **RS-Hash / RS-Stream** (5 seeds), **PCA + Mahalanobis** (matched `32-D` & full raw `w*D` via pure-Rust cyclic Jacobi eigensolver), **kNN (`k=5`)**, exact `O(N log N)` Mann-Whitney U AUROC, `.npz`/`.npy` reader (`flate2` `rust_backend`), and ARM Cortex-M4F ELF32 footprint inspector (`ppc-bench inspect-elf --check-budget`) into standalone native Rust (`tools/ppc-bench/`), keeping the core `ppc_gauge_triad_rs` crate `0`-dependency `#![no_std]` and excluded cleanly via `Cargo.toml`.
+  - Wired `cargo test --manifest-path tools/ppc-bench/Cargo.toml` and pure-Rust Level 2.5 ELF budget inspection into `.github/workflows/ci.yml` (zero Python in Level 2.5 CI).
+- **Fair Streaming & Window Baselines (`tools/ppc-bench/src/baselines.rs`, `benchmarks/results_baselines.md`):**
+  - Evaluated **Half-Space Trees** (Tan et al., IJCAI 2011; 5 seeds), **RS-Hash / RS-Stream** (Sathe & Aggarwal, ICDM 2016; 5 seeds), **PCA + Mahalanobis** (both matched `32-D` windows and full raw `w*D` windows), and **kNN (`k=5`)** natively in Rust (`tools/ppc-bench/`), supplemented by `scikit-learn` **Isolation Forest** (5 seeds) and **OC-SVM** on identical `w = 8` windows, chronological splits, split-conformal calibration (`alpha = 0.05`), and non-point-adjusted window-level labels (exact `O(N log N)` Mann-Whitney U AUROC).
+  - Added CLI flags `cargo run --release --manifest-path tools/ppc-bench/Cargo.toml -- baselines` and `python benchmarks/run_benchmarks.py --baselines --offline`, plus native Rust unit tests verifying determinism, anomaly separation, and shift-invariant Dual-Stage Gate monotonicity (`far_dual <= far_raw`).
   - Documented deep temporal baselines (`USAD` / `TranAD`) honestly as `PENDING / Future Work` (PyTorch not installed in the offline verification environment).
-- **Zero-Shot Score-Inversion Diagnostic:** Added empirical normal vs. fault median score diagnostics for `0w` cross-device zero-shot (`29.7%` mean AUROC) in `benchmarks/run_benchmarks.py`.
+- **Zero-Shot Score-Inversion Diagnostic:** Added empirical normal vs. fault median score diagnostics for `0w` cross-device zero-shot (`29.7%` mean AUROC) in `tools/ppc-bench/src/main.rs` (`ppc-bench warmup`).
+
+### Removed
+- Removed `benchmarks/inspect_elf.py` and `benchmarks/baselines.py`, now replaced by native Rust implementations in `tools/ppc-bench/`.
 
 ### Changed
 - **Honest Benchmark Visualization (`paper/figures/fig1_8server_ablation.png` / `.pdf` & `benchmarks/generate_paper_figures.py`):**
