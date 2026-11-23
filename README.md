@@ -21,9 +21,6 @@ flowchart TD
     Bench --> Paper["<b>paper/</b><br/>LaTeX Manuscript & Figures"]
 ```
 
-## Visual Benchmark Highlights (Verified Offline Level 2 Replay)
-
-
 ### Visual Benchmark Highlights (Verified Offline Level 2 Replay)
 
 ![8-Server Chronological Replay and Preset Trade-Off](paper/figures/fig1_8server_ablation.png)
